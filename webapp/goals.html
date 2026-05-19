@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Life.Play — Goal Tracker</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg-primary: #0f0f1a;
+      --bg-secondary: #1a1a2e;
+      --bg-card: #16213e;
+      --text-primary: #e0e0e0;
+      --text-secondary: #8888aa;
+      --border: #2a2a4a;
+      --accent: #00d4ff;
+      --radius-md: 8px;
+      --radius-lg: 12px;
+    }
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: var(--tg-theme-bg-color, var(--bg-primary));
+      color: var(--tg-theme-text-color, var(--text-primary));
+      padding: 12px;
+      min-height: 100vh;
+    }
+    .tracker { max-width: 500px; margin: 0 auto; }
+    .header { margin-bottom: 1.5rem; text-align: center; }
+    .header h1 { font-size: 20px; font-weight: 600; background: linear-gradient(135deg, #00d4ff, #7b2fbe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
+    .header p { font-size: 12px; color: var(--tg-theme-hint-color, var(--text-secondary)); margin-top: 4px; }
+    .overview { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 1.5rem; }
+    .ov-card { background: var(--tg-theme-secondary-bg-color, var(--bg-secondary)); border-radius: var(--radius-md); padding: 10px; text-align: center; }
+    .ov-label { font-size: 10px; color: var(--tg-theme-hint-color, var(--text-secondary)); margin-bottom: 2px; text-transform: uppercase; letter-spacing: 0.5px; }
+    .ov-val { font-size: 24px; font-weight: 600; color: var(--accent); }
+    .ov-sub { font-size: 10px; color: var(--tg-theme-hint-color, var(--text-secondary)); }
+    .cats { display: flex; flex-direction: column; gap: 10px; }
+    .cat-card { background: var(--tg-theme-secondary-bg-color, var(--bg-card)); border: 1px solid var(--tg-theme-hint-color, var(--border)); border-radius: var(--radius-lg); overflow: hidden; }
+    .cat-header { display: flex; align-items: center; gap: 8px; padding: 12px 12px 8px; cursor: pointer; user-select: none; }
+    .cat-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+    .cat-name { font-size: 14px; font-weight: 500; flex: 1; }
+    .cat-pct { font-size: 12px; color: var(--tg-theme-hint-color, var(--text-secondary)); }
+    .cat-chevron { font-size: 10px; color: var(--tg-theme-hint-color, var(--text-secondary)); transition: transform 0.2s; }
+    .cat-chevron.open { transform: rotate(180deg); }
+    .cat-bar-wrap { height: 3px; background: var(--tg-theme-bg-color, var(--bg-primary)); margin: 0 12px 8px; border-radius: 2px; }
+    .cat-bar { height: 100%; border-radius: 2px; transition: width 0.5s ease; }
+    .cat-body { display: none; padding: 0 12px 12px; border-top: 1px solid var(--tg-theme-hint-color, var(--border)); }
+    .cat-body.open { display: block; }
+    .goal-list { margin-top: 8px; display: flex; flex-direction: column; gap: 8px; }
+    .goal-item { display: flex; flex-direction: column; gap: 3px; }
+    .goal-row { display: flex; align-items: center; gap: 6px; }
+    .goal-name { font-size: 13px; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .goal-pct-lbl { font-size: 11px; color: var(--tg-theme-hint-color, var(--text-secondary)); min-width: 30px; text-align: right; }
+    .goal-progress-bar { height: 4px; border-radius: 2px; background: var(--tg-theme-bg-color, var(--bg-primary)); flex: 1; overflow: hidden; }
+    .goal-fill { height: 100%; border-radius: 2px; transition: width 0.4s ease; }
+    .goal-del { background: none; border: none; cursor: pointer; font-size: 14px; color: var(--tg-theme-hint-color, var(--text-secondary)); padding: 0 2px; line-height: 1; opacity: 0.5; }
+    .goal-del:hover { opacity: 1; color: #e74c3c; }
+    .add-form { display: flex; gap: 6px; margin-top: 10px; flex-wrap: wrap; align-items: center; }
+    .add-form input[type="text"] {
+      flex: 1; min-width: 100px; font-size: 13px; padding: 6px 10px;
+      border: 1px solid var(--tg-theme-hint-color, var(--border));
+      border-radius: var(--radius-md);
+      background: var(--tg-theme-bg-color, var(--bg-primary));
+      color: var(--tg-theme-text-color, var(--text-primary));
+    }
+    .add-form input[type="range"] { width: 70px; accent-color: var(--accent); }
+    .pct-display { font-size: 11px; color: var(--tg-theme-hint-color, var(--text-secondary)); min-width: 28px; }
+    .add-btn {
+      font-size: 12px; padding: 6px 12px;
+      border: none; border-radius: var(--radius-md);
+      background: var(--accent); color: #0f0f1a;
+      cursor: pointer; font-weight: 600; white-space: nowrap;
+    }
+    .add-btn:hover { opacity: 0.9; }
+    .empty { font-size: 12px; color: var(--tg-theme-hint-color, var(--text-secondary)); margin-top: 8px; font-style: italic; }
+    .edit-row { display: flex; align-items: center; }
+    .edit-range { width: 100%; accent-color: var(--accent); }
+    .brand { text-align: center; margin-top: 2rem; font-size: 11px; color: var(--tg-theme-hint-color, var(--text-secondary)); }
+    .brand span { background: linear-gradient(135deg, #00d4ff, #7b2fbe); -webkit-background-clip: text; -webkit-text-fill-color: transparent; font-weight: 600; }
+  </style>
+</head>
+<body>
+<div class="tracker">
+  <div class="header">
+    <h1>Life.Play — Goal Tracker</h1>
+    <p>Verfolge deinen Fortschritt in allen Lebensbereichen</p>
+  </div>
+  <div class="overview" id="overview"></div>
+  <div class="cats" id="cats"></div>
+  <div class="brand">Powered by <span>Life.Play</span> — Cyberpunk-Dharma</div>
+</div>
+<script>
+const tg = window.Telegram?.WebApp;
+if (tg) { tg.ready(); tg.expand(); }
+
+const CATS = [
+  { id:'karriere', name:'Karriere & Lernen', color:'#185FA5' },
+  { id:'finanzen', name:'Finanzen', color:'#3B6D11' },
+  { id:'gesundheit', name:'Gesundheit & Fitness', color:'#993C1D' },
+  { id:'persoenlich', name:'Persoenliche Entwicklung', color:'#534AB7' },
+  { id:'digitaldharma', name:'Digital Dharma', color:'#BA7517' },
+  { id:'lifeplay', name:'Life.Play Projekt', color:'#7b2fbe' },
+];
+let data = {};
+let open = {};
+
+function load() {
+  try {
+    const stored = localStorage.getItem('lifeplay_goals');
+    if (stored) data = JSON.parse(stored);
+  } catch(e) {}
+  CATS.forEach(c => { if (!data[c.id]) data[c.id] = []; });
+  render();
+}
+
+function save() {
+  try { localStorage.setItem('lifeplay_goals', JSON.stringify(data)); } catch(e) {}
+}
+
+function avgPct(goals) {
+  if (!goals.length) return 0;
+  return Math.round(goals.reduce((s,g) => s + g.pct, 0) / goals.length);
+}
+function totalGoals() { return CATS.reduce((s,c) => s + data[c.id].length, 0); }
+function overallPct() {
+  const all = CATS.flatMap(c => data[c.id]);
+  if (!all.length) return 0;
+  return Math.round(all.reduce((s,g) => s + g.pct, 0) / all.length);
+}
+function doneGoals() { return CATS.flatMap(c => data[c.id]).filter(g => g.pct === 100).length; }
+
+function render() { renderOverview(); renderCats(); }
+
+function renderOverview() {
+  const el = document.getElementById('overview');
+  el.innerHTML = `
+    <div class="ov-card"><div class="ov-label">Ziele</div><div class="ov-val">${totalGoals()}</div><div class="ov-sub">gesamt</div></div>
+    <div class="ov-card"><div class="ov-label">Done</div><div class="ov-val">${doneGoals()}</div><div class="ov-sub">100%</div></div>
+    <div class="ov-card"><div class="ov-label">Progress</div><div class="ov-val">${overallPct()}%</div><div class="ov-sub">gesamt</div></div>
+  `;
+}
+
+function renderCats() {
+  const el = document.getElementById('cats');
+  el.innerHTML = '';
+  CATS.forEach(cat => {
+    const goals = data[cat.id];
+    const pct = avgPct(goals);
+    const isOpen = open[cat.id];
+    const card = document.createElement('div');
+    card.className = 'cat-card';
+    card.innerHTML = `
+      <div class="cat-header" onclick="toggle('${cat.id}')">
+        <div class="cat-dot" style="background:${cat.color}"></div>
+        <div class="cat-name">${cat.name}</div>
+        <div class="cat-pct">${goals.length} Ziel${goals.length !== 1 ? 'e' : ''} · ${pct}%</div>
+        <div class="cat-chevron${isOpen ? ' open' : ''}">▼</div>
+      </div>
+      <div class="cat-bar-wrap"><div class="cat-bar" style="width:${pct}%;background:${cat.color}"></div></div>
+      <div class="cat-body${isOpen ? ' open' : ''}" id="body-${cat.id}">
+        <div class="goal-list" id="list-${cat.id}">
+          ${goals.length === 0 ? '<div class="empty">Noch keine Ziele — leg los!</div>' : goals.map((g,i) => `
+            <div class="goal-item">
+              <div class="goal-row">
+                <div class="goal-name" title="${g.name}">${g.name}</div>
+                <div class="goal-pct-lbl">${g.pct}%</div>
+                <button class="goal-del" onclick="del('${cat.id}',${i})" title="Loeschen">✕</button>
+              </div>
+              <div class="goal-row">
+                <div class="goal-progress-bar"><div class="goal-fill" style="width:${g.pct}%;background:${cat.color}"></div></div>
+              </div>
+              <div class="edit-row">
+                <input type="range" min="0" max="100" step="1" value="${g.pct}" class="edit-range" oninput="updatePct('${cat.id}',${i},this.value)" />
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        <div class="add-form">
+          <input type="text" id="inp-${cat.id}" placeholder="Neues Ziel..." onkeydown="if(event.key==='Enter')addGoal('${cat.id}')" />
+          <input type="range" min="0" max="100" step="1" value="0" id="rng-${cat.id}" oninput="document.getElementById('pct-${cat.id}').textContent=this.value+'%'" />
+          <span class="pct-display" id="pct-${cat.id}">0%</span>
+          <button class="add-btn" onclick="addGoal('${cat.id}')">+</button>
+        </div>
+      </div>
+    `;
+    el.appendChild(card);
+  });
+}
+
+function toggle(id) { open[id] = !open[id]; render(); }
+
+function addGoal(catId) {
+  const inp = document.getElementById('inp-' + catId);
+  const rng = document.getElementById('rng-' + catId);
+  const name = inp.value.trim();
+  if (!name) return;
+  data[catId].push({ name, pct: parseInt(rng.value) });
+  save(); render();
+  setTimeout(() => { open[catId] = true; render(); }, 10);
+}
+
+function del(catId, idx) {
+  data[catId].splice(idx, 1);
+  save(); render();
+  setTimeout(() => { open[catId] = true; render(); }, 10);
+}
+
+function updatePct(catId, idx, val) {
+  data[catId][idx].pct = parseInt(val);
+  save(); renderOverview();
+  const list = document.getElementById('list-' + catId);
+  if (list) {
+    const items = list.querySelectorAll('.goal-item');
+    if (items[idx]) {
+      const fill = items[idx].querySelector('.goal-fill');
+      const lbl = items[idx].querySelector('.goal-pct-lbl');
+      if (fill) fill.style.width = val + '%';
+      if (lbl) lbl.textContent = val + '%';
+    }
+  }
+  const card = document.querySelector(`#body-${catId}`)?.closest('.cat-card');
+  const catBar = card?.querySelector('.cat-bar');
+  const catPct = card?.querySelector('.cat-pct');
+  const goals = data[catId];
+  const avg = avgPct(goals);
+  if (catBar) catBar.style.width = avg + '%';
+  if (catPct) catPct.textContent = `${goals.length} Ziel${goals.length !== 1 ? 'e' : ''} · ${avg}%`;
+}
+
+load();
+</script>
+</body>
+</html>

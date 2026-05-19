@@ -1,0 +1,26 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+
+# Virtual envs
+.venv/
+venv/
+
+# Local secrets
+.env
+
+# Runtime data
+data/
+*.db
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.gemini/
+
+# OS/editor
+.DS_Store
+Thumbs.db

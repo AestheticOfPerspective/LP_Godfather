@@ -1,0 +1,27 @@
+stages:
+  - validate
+
+default:
+  image: python:3.12-slim
+  before_script:
+    - python --version
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "push"
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+
+syntax_check:
+  stage: validate
+  script:
+    - python -m compileall -q .
+  rules:
+    - if: $CI_COMMIT_BRANCH
+
+env_example_guard:
+  stage: validate
+  script:
+    - test -f .env.example
+    - if grep -Eq "(your_telegram_bot_token_here|dein_claude_api_key_hier|dein_username|dein_passwort)" .env.example; then echo "env example placeholders ok"; else echo "expected placeholders missing in .env.example"; exit 1; fi
+  rules:
+    - if: $CI_COMMIT_BRANCH

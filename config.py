@@ -27,7 +27,7 @@ ANTISPAM_ENABLED: bool = os.getenv("ANTISPAM_ENABLED", "true").lower() == "true"
 MAX_WARNS: int = int(os.getenv("MAX_WARNS", "3"))
 
 # Gemini Modell
-GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+GEMINI_MODEL: str = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
 
 # ── Datenbank ─────────────────────────────────────────────────────────────────
 DB_PATH: str = os.getenv("DB_PATH", "data/godfather.db")

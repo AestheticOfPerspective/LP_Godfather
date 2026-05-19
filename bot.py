@@ -236,6 +236,18 @@ async def cmd_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None
 
     msg = await update.message.reply_text(f"🔍 {persona_name} analysiert...")
 
+    db.increment_stat("ai_requests")
+    response = await ask_ai(
+        "Analysiere diesen Prompt als Prompt-Engineering-Experte. "
+        "Gib konkrete Verbesserungsvorschlaege. Maximal 3 Punkte, kein Bullshit.\n\n"
+        f"Prompt:\n{prompt_text}",
+        user_id=user_id,
+    )
+    await msg.edit_text(
+        f"🎯 <b>Prompt-Analyse:</b>\n\n{response}",
+        parse_mode=ParseMode.HTML,
+    )
+
 
 # ── /vibe ─────────────────────────────────────────────────────────────────────
 async def cmd_vibe(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -275,18 +287,6 @@ async def cmd_clear(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     await update.message.reply_text(
         "🧹 Gesprächsverlauf gelöscht. Frischer Start, Choom.",
         parse_mode=ParseMode.HTML,
-    )
-
-    db.increment_stat("ai_requests")
-    response = await ask_ai(
-        f"Analysiere diesen Prompt als Prompt-Engineering-Experte. "
-        f"Gib konkrete Verbesserungsvorschläge. Maximal 3 Punkte, kein Bullshit.\n\n"
-        f"Prompt:\n{prompt_text}",
-        user_id=user_id,
-    )
-    await msg.edit_text(
-        f"🎯 <b>Prompt-Analyse:</b>\n\n{response}",
-        parse_mode=ParseMode.HTML
     )
 
 

@@ -15,7 +15,7 @@ Studio + Stage workflow for LP_Godfather.
 Suggested names:
 
 - GitLab: `AestheticOfPerspective/LP_Godfather`
-- GitHub: `lifeplay/godfather-bot`
+- GitHub: `AestheticOfPerspective/LP_Godfather`
 
 ## 2) Branch + Release Rules
 
@@ -39,7 +39,7 @@ Use GitLab as canonical remote and GitHub as mirror target.
 
 ```bash
 # from repo root
-bash scripts/setup-dual-remote.sh git@github.com:lifeplay/godfather-bot.git
+bash scripts/setup-dual-remote.sh https://github.com/AestheticOfPerspective/LP_Godfather.git
 ```
 
 This script:

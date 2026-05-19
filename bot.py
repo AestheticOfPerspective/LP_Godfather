@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 GodFather Bot — Life.Play Community Manager
-FOSS (MIT License) | github.com/lifeplay/godfather-bot
+FOSS (MIT License) | github.com/AestheticOfPerspective/LP_Godfather
 
 Telegram group & community bot with AI integration via Gemini API.
 """
@@ -88,7 +88,7 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         [InlineKeyboardButton("📦 Produkte", callback_data="products"),
          InlineKeyboardButton("🤖 KI fragen", callback_data="ai_help")],
         [InlineKeyboardButton("🎭 Persona wählen", callback_data="persona_menu"),
-         InlineKeyboardButton("📖 Source Code", url="https://github.com/lifeplay/godfather-bot")],
+         InlineKeyboardButton("📖 Source Code", url="https://github.com/AestheticOfPerspective/LP_Godfather")],
     ])
     await update.message.reply_text(text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
 

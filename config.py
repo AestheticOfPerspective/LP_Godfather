@@ -35,4 +35,4 @@ DB_PATH: str = os.getenv("DB_PATH", "data/godfather.db")
 # ── Community Links ───────────────────────────────────────────────────────────
 DISCORD_LINK: str = os.getenv("DISCORD_LINK", "")
 WEBSITE_URL: str = os.getenv("WEBSITE_URL", "https://lifeplay.dev")
-GITHUB_URL: str = os.getenv("GITHUB_URL", "https://github.com/lifeplay/godfather-bot")
+GITHUB_URL: str = os.getenv("GITHUB_URL", "https://github.com/AestheticOfPerspective/LP_Godfather")

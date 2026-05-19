@@ -3,7 +3,7 @@ set -euo pipefail
 
 if [[ $# -lt 1 ]]; then
   printf "Usage: %s <github-ssh-url>\n" "$0"
-  printf "Example: %s git@github.com:lifeplay/godfather-bot.git\n" "$0"
+  printf "Example: %s https://github.com/AestheticOfPerspective/LP_Godfather.git\n" "$0"
   exit 1
 fi
 

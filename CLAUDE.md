@@ -48,7 +48,7 @@ bash scripts/preflight-release.sh    # .env ignored + secret-pattern scan + .env
 
 Studio/Stage workflow (GitLab canonical, GitHub mirror — see `SHOWTIME_NEXUS.md`):
 ```bash
-bash scripts/setup-dual-remote.sh git@github.com:lifeplay/godfather-bot.git
+bash scripts/setup-dual-remote.sh https://github.com/AestheticOfPerspective/LP_Godfather.git
 bash scripts/push-all.sh main        # pushes to gitlab then github; requires both remotes
 git push gitlab vX.Y.Z && git push github vX.Y.Z   # tag release
 ```

@@ -46,3 +46,11 @@ docker-compose up -d --build
 - Runtime data is in `data/` and ignored by git.
 - `docker-compose.yml` currently sets `OLLAMA_HOST=http://ollama:11434` for container mode.
 - Bot command and handler wiring starts in `bot.py`.
+
+## Studio + Stage Workflow
+
+- Strategy doc: `SHOWTIME_NEXUS.md`
+- Model routing guide: `MODEL_ROUTING.md`
+- Dual-remote setup: `bash scripts/setup-dual-remote.sh <github-ssh-url>`
+- Push to GitLab + GitHub: `bash scripts/push-all.sh main`
+- Public safety preflight: `bash scripts/preflight-release.sh`

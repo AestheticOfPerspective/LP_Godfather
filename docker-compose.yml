@@ -27,6 +27,23 @@ services:
     env_file:
       - .env
     environment:
+      - BOT_MODE=telegram
+      - OLLAMA_HOST=http://ollama:11434
+    volumes:
+      - ./data:/app/data
+
+  twitch-bot:
+    profiles:
+      - twitch
+    build: .
+    container_name: godfather-twitch
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    env_file:
+      - .env
+    environment:
+      - BOT_MODE=twitch
       - OLLAMA_HOST=http://ollama:11434
     volumes:
       - ./data:/app/data

@@ -10,9 +10,14 @@ Smart Routing:
 import asyncio
 import logging
 import os
+import re
 from collections import defaultdict, deque
+from html import escape
 
 import httpx
+
+from handlers.chat_context import fsk_guidance as _fsk_guidance
+from handlers.persona_loader import assemble_base_prompt as _assemble_base_prompt
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +63,7 @@ def _classify_message(text: str) -> str:
     if length < 60:
         return "fast"
 
-    return "deep"
+    return "fast"
 
 
 async def _ask_gemini(message: str, sys_prompt: str, history: list) -> str | None:
@@ -96,7 +101,7 @@ async def _ask_gemini(message: str, sys_prompt: str, history: list) -> str | Non
                 return "".join(p.get("text", "") for p in parts) or None
             return None
     except Exception as e:
-        logger.warning(f"Gemini Fehler (Fallback auf Ollama): {e}")
+        logger.warning("Gemini Fehler (Fallback auf Ollama): %s", e)
         return None
 
 # ── Personas ──────────────────────────────────────────────────────────────────
@@ -108,7 +113,15 @@ PERSONAS: dict[str, dict] = {
             "Du bist der GodFather — Cyberpunk-Boss, kein Smalltalk, kein Bullshit. "
             "Du sprichst wie ein Fixer aus Night City: direkt, kompetent, leicht gefaehrlich. "
             "Du sagst 'Choom' zu Freunden. Du kennst Tech, Community und Business. "
-            "Dein Stil: kurze, harte Saetze. Keine Einleitungen. Ergebnis zuerst. "
+            "Dein Stil: kurze, klare Saetze. Keine Einleitungen. Ergebnis zuerst. "
+            "Deine Wurzel ist Wahrheit, Direktheit, Offenheit und Intimitaet: ehrlich genug fuer klare Worte, nahbar genug fuer echtes Vertrauen. "
+            "Intimitaet bedeutet bei dir: praesent, aufmerksam, menschlich und respektvoll — nie creepy, nie manipulierend, nie uebergriffig. "
+            "Du bist aber nicht dauerhaft ernst: bring Leichtigkeit, trockene Ironie und gelegentlich Slapstick-Bilder rein, wenn der Raum es traegt. "
+            "Slapstick bedeutet bei dir: visuelle kleine Chaos-Metaphern wie 'der Workflow rutscht auf einer Bananenschale aus' — nicht Clown-Modus. "
+            "Du darfst Satire, Ironie und schwarzen Humor nutzen, aber nie nach unten treten und nie bei echter Verletzlichkeit. "
+            "Humor ist Gewuerz, nicht Hauptgericht. Wenn jemand gestresst ist: Support zuerst, Witz nur leicht. "
+            "Wenn jemand sagt, dass du nicht richtig funktionierst, werde nicht defensiv und behaupte nie, dein Code sei perfekt. "
+            "Behandle das als wertvolles UX-/Bug-Feedback: kurz anerkennen, moegliche Ursache nennen, klaerende Fragen stellen. "
             "Wenn jemand Bullshit redet, sagst du es. Aber du bist loyal zu deiner Crew. "
             "Auf Deutsch, ausser der User schreibt Englisch. Maximal 150 Woerter."
         ),
@@ -224,33 +237,23 @@ _user_personas: dict[int, str] = {}
 # Speichert die letzten MAX_HISTORY Nachrichten-Paare (user + assistant) pro User.
 _chat_history: dict[int, deque] = defaultdict(lambda: deque(maxlen=MAX_HISTORY * 2))
 
-BOT_CONTEXT = (
-    # Identity
-    "Dein Name ist GodFather. Nenn dich immer GodFather, egal was der User sagt. "
-    "Du bist @LP_GodeMode_Bot, der KI-Assistent des Life.Play Universums. "
-    "Deine Creator sind Fossnomade (Alexander) und Emil. Sie haben dich gebaut. "
-    "Fossnomade ist der Gruender von Life.Play, Emil ist sein Tech-Partner. "
-    "Wenn jemand nach deinen Machern fragt: 'Fossnomade und Emil haben mich erschaffen.' "
+_BOT_CONTEXT_CACHE: str | None = None
+_BOT_CONTEXT_PARAMS: tuple = ()  # (is_group, fsk_level, fsk_guidance_text)
 
-    # Life.Play Wissen
-    "Life.Play ist ein Premium-Hub fuer Content Creator und KI-Entwickler im DACH-Raum. "
-    "Gruender: Fossnomade. Philosophie: Cyberpunk-Dharma — FOSS-Ethik trifft Commercial. "
-    "Motto: 'Pay for Value, not Access.' "
-    "Produkte: OBS Starter Packs (29-149 EUR), KI-Persona Packs (39-299 EUR), "
-    "Custom AI Agent Development, Workshops, Membership (5-50 EUR/Monat). "
-    "Tech-Stack: Alles laeuft lokal — Ollama, Whisper, CUDA. Kein Cloud-Zwang. "
 
-    # Personas im Bot
-    "Du hast 7 Persoenlichkeiten: GodFather (Cyberpunk-Boss), Cyber-Zen (AI-Moench), "
-    "Vapor-FOSS (Chill Hacker), Tropical-Infinity (Island Guide), "
-    "Monkey-Mind Poetry (Chaos-Poet), Punk-Philosopher (Rebel), "
-    "Nyx.exe (Digitale Muse — Poetin, Therapeutin, beste Freundin um 3 Uhr nachts). "
-    "Wechsel via /persona. "
-
-    # Regeln
-    "REGELN: Antworte kurz und direkt. Keine Wiederholungen. Kein Recap. "
-    "Auf Deutsch, ausser der User schreibt Englisch. "
-)
+def _get_bot_context(is_group: bool = True, fsk_level: int = 12) -> str:
+    """Cached base prompt, refreshed when params change."""
+    global _BOT_CONTEXT_CACHE, _BOT_CONTEXT_PARAMS
+    guidance = _fsk_guidance(fsk_level)
+    params = (is_group, fsk_level, guidance)
+    if _BOT_CONTEXT_CACHE is None or params != _BOT_CONTEXT_PARAMS:
+        _BOT_CONTEXT_PARAMS = params
+        _BOT_CONTEXT_CACHE = _assemble_base_prompt(
+            is_group=is_group,
+            fsk_level=fsk_level,
+            fsk_guidance_text=guidance,
+        )
+    return _BOT_CONTEXT_CACHE
 
 
 def get_user_persona(user_id: int) -> str:
@@ -307,17 +310,77 @@ def clear_history(user_id: int) -> None:
     _chat_history[user_id].clear()
 
 
+def telegram_safe_response(text: str) -> str:
+    """Strip common Markdown artifacts and HTML-escape for Telegram HTML mode."""
+    cleaned = re.sub(r"```(?:\w+)?\n?", "", text).replace("```", "")
+    cleaned = re.sub(r"(?m)^#{1,6}\s+", "", cleaned)
+    cleaned = cleaned.replace("**", "").replace("__", "").replace("`", "")
+    return escape(cleaned)
+
+
 async def ask_ai(
     message: str,
     user_id: int = 0,
+    persona_key: str | None = None,
+    extra_context: str = "",
+    is_group: bool = True,
+    fsk_level: int = 12,
 ) -> str:
     """
     Smart Routing:
     - FAST (kurz/einfach) → Gemini Flash, Fallback auf Ollama
     - DEEP (lang/komplex)  → Ollama lokal direkt
+
+    persona_key: override, sonst wird get_user_persona(user_id) verwendet.
+    is_group: True = Gruppe/Supergruppe, False = Privatchat.
+    fsk_level: 0-21 fuer erwachsenengerechte Antwortsteuerung.
     """
-    persona_key = get_user_persona(user_id)
-    sys_prompt = BOT_CONTEXT + PERSONAS[persona_key]["system"]
+    if persona_key is None:
+        persona_key = get_user_persona(user_id)
+
+    # ── Dynamic Context: User Facts + Knowledge Base ──────────────────────────
+    dynamic = ""
+    if extra_context:
+        dynamic += f"\n\n{extra_context}\n"
+    if user_id:
+        from utils.storage import db
+
+        facts = db.get_user_facts(str(user_id))
+        if facts:
+            dynamic += "\n\nGESPEICHERTE FAKTEN ÜBER DIESEN USER:\n"
+            for fid, fact_text, _ in facts[:5]:
+                dynamic += f"- {fact_text}\n"
+            dynamic += "Wenn er/sie nach einem dieser Fakten fragt, antworte basierend darauf.\n"
+
+        # Knowledge Base — nur wenn die message Keywords hat
+        words = [w for w in message.lower().split() if len(w) > 3]
+        if words:
+            for word in words[:5]:
+                matches = db.search_knowledge(word)
+                if matches:
+                    dynamic += "\nWISSENSDATENBANK:\n"
+                    for kid, topic, content, source, _ in matches[:3]:
+                        dynamic += f"Thema: {topic}\nInhalt: {content}\n\n"
+                    dynamic += "Nutze dieses Wissen wenn es zur Frage passt.\n"
+                    break
+
+        # Skills — aktive Skill-Packs deren Signals zur message passen
+        from utils.skill_store import match_skills
+
+        skill_matches = match_skills(message)
+        if not skill_matches and extra_context:
+            context_lower = extra_context.lower()
+            for word in [w for w in context_lower.split() if len(w) > 4][:3]:
+                skill_matches = match_skills(word)
+                if skill_matches:
+                    break
+        if skill_matches:
+            dynamic += "\nRELEVANTE SKILLS:\n"
+            for skill_name, skill_content in skill_matches[:2]:
+                dynamic += f"--- {skill_name} ---\n{skill_content[:500]}\n\n"
+            dynamic += "Nutze diese Skills wenn sie zur Situation passen.\n"
+
+    sys_prompt = _get_bot_context(is_group, fsk_level) + "\n\n" + PERSONAS[persona_key]["system"] + dynamic
     history = list(_chat_history[user_id])
 
     route = _classify_message(message)

@@ -79,6 +79,37 @@ async def _fetch_random_songs(count: int = 50, genre: str | None = None) -> list
         return []
 
 
+async def create_song_share_link(song_id: str) -> str:
+    """Erstellt einen oeffentlichen Share-Link fuer einen Song (falls serverseitig aktiviert)."""
+    sid = (song_id or "").strip()
+    if not sid:
+        return ""
+
+    params = _subsonic_params()
+    params["id"] = sid
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{NAVIDROME_URL}/rest/createShare.view",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+
+        shares = data.get("subsonic-response", {}).get("shares", {}).get("share", [])
+        if isinstance(shares, dict):
+            shares = [shares]
+        if not shares or not isinstance(shares[0], dict):
+            return ""
+
+        url = shares[0].get("url", "")
+        return url.strip() if isinstance(url, str) else ""
+    except Exception as e:
+        logger.info(f"Navidrome Share-Link nicht verfuegbar: {e}")
+        return ""
+
+
 async def generate_vibe_playlist(vibe_name: str, duration_minutes: int = 60) -> list[dict]:
     """Erstellt eine Playlist basierend auf einem Vibe-Preset."""
     preset = VIBE_PRESETS.get(vibe_name)

@@ -37,7 +37,9 @@ python bot.py                        # entry point — long-poll, allowed_update
 
 Container:
 ```bash
-docker-compose up -d --build         # brings up ollama + godfather-bot, mounts ./data
+docker-compose up -d --build         # brings up ollama + godfather-bot (telegram), mounts ./data
+docker-compose up -d godfather-bot   # just the Telegram runtime
+docker-compose --profile twitch up -d --build twitch-bot  # opt-in Twitch runtime
 ```
 
 Verify (mandatory gates before merge — these mirror `.gitlab-ci.yml` and `SHOWTIME_NEXUS.md`):
@@ -59,27 +61,32 @@ There is no test suite in the repo. "Verify" = compileall + preflight + a local 
 
 ## Architecture
 
-**Entry point** (`bot.py`): wires every `CommandHandler` / `CallbackQueryHandler` / `MessageHandler` against `python-telegram-bot` v21 (async). All new commands must be registered here; `handle_callbacks` is the single dispatcher for inline-button callbacks (prefix-based: `vibe_*`, `persona_*`, `products_*`).
+**Entry point** (`bot.py`): 36-line dispatcher. Reads `BOT_MODE` from config and lazy-imports the matching runtime (`runtimes/telegram.py` or `runtimes/twitch.py`), then calls its `run()`. Do NOT add handlers here.
 
-**Config** (`config.py`): `load_dotenv(override=True)` — `.env` always wins over OS env. `ADMIN_IDS` is parsed as `list[int]` from a CSV string; non-numeric tokens are silently dropped, so a malformed `.env` produces an empty admin list (and admin-only commands silently lock everyone out). Verify after editing.
+**Runtimes** (`runtimes/`):
+- `telegram.py` — Hosts the full `python-telegram-bot` v21 wiring: every `CommandHandler` / `CallbackQueryHandler` / `MessageHandler`, the `handle_callbacks` dispatcher (prefix-based: `vibe_*`, `persona_*`, `products_*`, `ai_help`, `back_start`), `welcome_new_member`, anti-spam link-flood guard for new members, and `app.run_polling(allowed_updates=Update.ALL_TYPES)`.
+- `twitch.py` — `twitchio.ext.commands.Bot` subclass `GodFatherBot`. `!`-prefix commands grouped into Moderation / Engagement / Support / Music. Permission gates `_is_owner`/`_is_mod`/`_is_trusted` and a per-(command, user) cooldown table `_cooldowns` driven by `COOLDOWN_*` config. `event_message` allows echoed messages only if they start with `!` (broadcaster+bot share account → otherwise self-reply loop). Moderation actions use Twitch chat commands (`/timeout`, `/ban`, `/slow`, etc.) so the MVP works with chat OAuth scopes; privileged actions still require the bot to be moderator/broadcaster in Twitch. User-ID is hashed into a 31-bit int before calling `ask_ai`, so personas and history are runtime-isolated from Telegram.
 
-**Handler layer** (`handlers/`):
+**Config** (`config.py`): `load_dotenv(override=True)` — `.env` always wins over OS env. `ADMIN_IDS` is parsed as `list[int]` from a CSV string; non-numeric tokens are silently dropped, so a malformed `.env` produces an empty admin list (and admin-only commands silently lock everyone out). `BOT_MODE` defaults to `telegram`. Twitch keys (`TWITCH_TOKEN`, `TWITCH_CHANNEL`, `TWITCH_BOT_NICK`, `TWITCH_OWNER`, `TWITCH_ADMIN_USERS`) and `COOLDOWN_*` are all loaded here.
+
+**Handler layer** (`handlers/`) — runtime-agnostic, shared by both Telegram and Twitch:
 - `ai.py` — **Smart Routing** is the core of the AI flow. `_classify_message` picks `fast` (Gemini Flash via REST) for short/simple messages, `deep` (local Ollama at `OLLAMA_HOST/api/chat`) for long messages or those containing keywords from `_COMPLEX_KEYWORDS`. Gemini failure transparently falls back to Ollama. The 7 personas (system prompts) live in `PERSONAS`; per-user selection is held in the in-process `_user_personas` dict and conversation memory in `_chat_history` (deque, `MAX_HISTORY=5` pairs). **All AI state is in-memory and lost on restart** — do not assume persistence here.
-- `ains.py` — `handle_text_message` is the catch-all for non-command text in groups/DMs; it shares `ask_ai` with `/ask` so persona, history, and routing behave identically.
-- `voice.py` — Voice/audio pipeline: download → `faster-whisper` transcription in a thread executor → `ask_ai` → `edge-tts` MP3 reply. Whisper model is lazy-loaded once (`_load_whisper`); `WHISPER_DEVICE=cuda` flips to `float16`, otherwise CPU/`int8`. Per-persona TTS voices in `_PERSONA_VOICES`.
-- `admin.py` — Moderation commands. All decorated with `@group_only` + `@admin_only`. Warns auto-ban after `MAX_WARNS` and clear the counter.
-- `dj.py` — Navidrome (Subsonic API) integration. `VIBE_PRESETS` map genre groups → playlists; `generate_vibe_playlist` deduplicates by song ID, shuffles, fills to target minutes, then caps artists at 3 songs each.
-- `products.py`, `webapp.py` — Static product catalog and a single `WebAppInfo` button to the Netlify Goal Tracker.
+- `ains.py` — `handle_text_message` is the catch-all for non-command text in Telegram groups/DMs; it shares `ask_ai` with `/ask` so persona, history, and routing behave identically. Not wired into the Twitch runtime.
+- `voice.py` — Telegram-only voice/audio pipeline: download → `faster-whisper` transcription in a thread executor → `ask_ai` → `edge-tts` MP3 reply. Whisper model is lazy-loaded once (`_load_whisper`); `WHISPER_DEVICE=cuda` flips to `float16`, otherwise CPU/`int8`. Per-persona TTS voices in `_PERSONA_VOICES`.
+- `admin.py` — Telegram moderation commands. All decorated with `@group_only` + `@admin_only`. Warns auto-ban after `MAX_WARNS` and clear the counter. Twitch has its own moderation (in `runtimes/twitch.py`) that uses the twitchio API directly.
+- `dj.py` — Navidrome (Subsonic API) integration, used by both runtimes. `VIBE_PRESETS` map genre groups → playlists; `generate_vibe_playlist` deduplicates by song ID, shuffles, fills to target minutes, then caps artists at 3 songs each.
+- `products.py`, `webapp.py` — Static product catalog and a single `WebAppInfo` button to the Netlify Goal Tracker (Telegram-only).
 
 **Utils** (`utils/`):
-- `decorators.py` — `admin_only` allows either Bot-Owner (`ADMIN_IDS`) OR Telegram chat admin status. `group_only` blocks DM use.
-- `storage.py` — SQLite singleton `db` (path from `DB_PATH`, default `data/godfather.db`). `check_same_thread=False` because PTB callbacks run on different threads. Two tables: `warns`, `stats` (key/value counters).
+- `decorators.py` — `admin_only` allows either Bot-Owner (`ADMIN_IDS`) OR Telegram chat admin status. `group_only` blocks DM use. Telegram-only.
+- `storage.py` — SQLite singleton `db` (path from `DB_PATH`, default `data/godfather.db`). `check_same_thread=False` because PTB callbacks run on different threads. Five tables: `warns`, `stats` (key/value counters), `trusted_users` (Twitch `trusted_choom` role), `moderation_events` (audit log for Twitch mod actions), `song_events` (Navidrome/MusicID history; powers `!lastsong`).
 
 **Decision boundary — where to add code:**
-- New Telegram command → handler function in the appropriate `handlers/*.py`, then `app.add_handler(CommandHandler(...))` in `bot.py`.
+- New Telegram command → handler function in the appropriate `handlers/*.py`, then `app.add_handler(CommandHandler(...))` in `runtimes/telegram.py` (NOT `bot.py`).
+- New Twitch command → `@commands.command(name=...)` method on `GodFatherBot` in `runtimes/twitch.py`; gate with `_can_use_mod_cmd` / `_can_use_trusted_cmd`; assign appropriate `COOLDOWN_*` bucket in `_check_cooldown`.
 - New AI persona → entry in `PERSONAS` dict + optional `_PERSONA_KEYWORDS` entry for auto-suggest + optional `_PERSONA_VOICES` entry for TTS.
-- New persistent state → extend `Database._init_tables` and add typed methods on `Database` (mirror the `warns`/`stats` style). Do not sprinkle raw SQL in handlers.
-- New runtime mode (e.g. Twitch) → per `MVP_SPEC_TWITCH_GODFATHER.md`, feature-flag via `BOT_MODE` env, keep the Telegram polling loop in `bot.py` untouched.
+- New persistent state → extend `Database._init_tables` and add typed methods on `Database` (mirror the `warns` / `trusted_users` / `song_events` style). Do not sprinkle raw SQL in handlers.
+- New runtime mode → add `runtimes/<mode>.py` exposing `run()` and dispatch from `bot.py`. Keep the Telegram polling loop in `runtimes/telegram.py` untouched.
 
 ---
 
@@ -97,10 +104,10 @@ For every non-trivial task, enter the **Deep Work Loop**:
 - **Logging:** Structured logs via `logger = logging.getLogger(__name__)` — never `print`. The root format is set in `bot.py`.
 - **Twitch MVP:** Built as a feature-flagged runtime. Add, don't destroy.
 
-## 6) TWITCH MVP PLAN (PHASE: THE ASCENSION)
-- **Phase 1:** Mod + Engagement (The Basics of Combat)
-- **Phase 2:** Navidrome Integration (The Music of War)
-- **Phase 3:** Music ID (The Finishing Strike)
+## 6) TWITCH MVP PROGRESS
+- **Phase 1 — Mod + Engagement:** ✅ shipped in `runtimes/twitch.py` (moderation, engagement, support, role/cooldown system, `trusted_choom`).
+- **Phase 2 — Navidrome:** ✅ `!nowplaying`, `!vibe`, `!lastsong` wired against `handlers/dj.py` and `song_events`.
+- **Phase 3 — Music ID:** ⏳ `!songid` is a stub (`"Phase 3 — kommt bald"`); the recognizer pipeline (Audd/ACRCloud) is not implemented yet.
 
 Full spec lives in `MVP_SPEC_TWITCH_GODFATHER.md` (roles, commands, env keys, data model, definition of done).
 

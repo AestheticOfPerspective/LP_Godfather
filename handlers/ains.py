@@ -1,25 +1,89 @@
+import re
+
 from telegram import Update
 from telegram.ext import ContextTypes
 from telegram.constants import ParseMode
 
-from handlers.ai import ask_ai, PERSONAS, get_user_persona, suggest_persona
+from handlers.ai import (
+    ask_ai,
+    PERSONAS,
+    get_user_persona,
+    suggest_persona,
+    telegram_safe_response,
+)
+from handlers.chat_context import build_chat_context_text, chat_maturity_level
+from handlers.feedback import log_text_reply_feedback
+from handlers.intents import handle_natural_intent
 from utils.storage import db
 
 
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    """Normaler Text → direkt an die KI. Kein /ask nötig."""
+    """Normaler Text -> KI-Antwort.
+
+    Privatchat: immer antworten.
+    Gruppe: nur bei @Bot-Erwaehnung oder Reply auf Bot-Nachricht (wie @Magiebot).
+    """
     if not update.message or not update.message.text:
         return
 
-    user_id = update.effective_user.id
+    user = update.effective_user
+    chat = update.effective_chat
+    if not user or user.is_bot or not chat:
+        return
+
     text = update.message.text
+    bot_username = context.bot.username.lower()
+    reply = update.message.reply_to_message
+
+    # Gruppen: nur triggern bei Mention oder Reply auf Bot.
+    if chat.type in ("group", "supergroup"):
+        is_reply_to_bot = (
+            update.message.reply_to_message
+            and update.message.reply_to_message.from_user
+            and update.message.reply_to_message.from_user.is_bot
+        )
+        is_mentioned = f"@{bot_username}" in text.lower()
+
+        if not is_reply_to_bot and not is_mentioned:
+            return
+
+        text = re.sub(rf"@{re.escape(bot_username)}\b", "", text, flags=re.IGNORECASE).strip()
+        if not text and reply:
+            text = "Bitte reagiere auf die zitierte Nachricht."
+        if not text:
+            return
+
+    if await handle_natural_intent(update, context, text):
+        return
+
+    if reply:
+        log_text_reply_feedback(update, text)
+        reply_text = reply.text or reply.caption or ""
+        if reply_text:
+            author = reply.from_user.first_name if reply.from_user else "Unbekannt"
+            text = (
+                "Kontext: Der User bezieht sich auf diese Telegram-Nachricht:\n"
+                f"Von: {author}\n"
+                f"---\n{reply_text[:1800]}\n---\n\n"
+                f"Aktuelle Frage/Auftrag: {text}\n\n"
+                "Antworte explizit auf diese zitierte Nachricht, nicht auf alte Chat-History."
+            )
+
+    user_id = user.id
     persona_key = get_user_persona(user_id)
     persona_name = PERSONAS[persona_key]["name"]
 
     msg = await update.message.reply_text(f"⏳ {persona_name} denkt nach...")
 
     db.increment_stat("ai_requests")
-    response = await ask_ai(text, user_id=user_id)
+    maturity = chat_maturity_level(chat)
+    response = await ask_ai(
+        text,
+        user_id=user_id,
+        extra_context=build_chat_context_text(chat, user),
+        is_group=chat.type in ("group", "supergroup"),
+        fsk_level=maturity,
+    )
 
     suggestion = suggest_persona(text, persona_key)
     hint = ""
@@ -28,6 +92,6 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         hint = f"\n\n💡 <i>Tipp: {s_name} passt besser → /persona</i>"
 
     await msg.edit_text(
-        f"{persona_name}:\n\n{response}{hint}",
+        f"{persona_name}:\n\n{telegram_safe_response(response)}{hint}",
         parse_mode=ParseMode.HTML,
     )

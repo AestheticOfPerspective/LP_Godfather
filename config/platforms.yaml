@@ -1,0 +1,93 @@
+telegram:
+  enabled: true
+  token_env: TELEGRAM_BOT_TOKEN
+  admin_ids_env: ADMIN_IDS
+  commands:
+    - name: start
+      description: "Welcome & bot info"
+      handler: cmd_start
+    - name: help
+      description: "Show all commands"
+      handler: cmd_help
+    - name: persona
+      description: "Switch persona or list all"
+      handler: cmd_persona
+    - name: flow
+      description: "Show current flow state"
+      handler: cmd_flow
+    - name: vibe
+      description: "Set vibe manually (hype/chill/deep/intense/creative)"
+      handler: cmd_vibe
+    - name: status
+      description: "System dashboard"
+      handler: cmd_status
+    - name: servers
+      description: "Ollama server status"
+      handler: cmd_servers
+    - name: model
+      description: "Show/switch AI model"
+      handler: cmd_model
+    - name: models
+      description: "List all models"
+      handler: cmd_models
+    - name: pull
+      description: "Download a model"
+      handler: cmd_pull
+    - name: history
+      description: "Conversation stats"
+      handler: cmd_history
+    - name: clear
+      description: "Reset conversation"
+      handler: cmd_clear
+    - name: supernova
+      description: "FORCE SUPERNOVA MODE"
+      handler: cmd_supernova
+    - name: about
+      description: "Bot info & credits"
+      handler: cmd_about
+  features:
+    vision: true
+    markdown: true
+    inline_keyboards: true
+    conversation_handler: true
+    persona_buttons: true
+
+twitch:
+  enabled: true
+  nick_env: TWITCH_BOT_NICK
+  token_env: TWITCH_BOT_TOKEN
+  channel_env: TWITCH_CHANNEL
+  owner_env: TWITCH_OWNER
+  commands:
+    - name: persona
+      description: "Switch persona: !persona [name]"
+      handler: cmd_persona
+    - name: flow
+      description: "Show current flow state"
+      handler: cmd_flow
+    - name: vibe
+      description: "Set vibe manually"
+      handler: cmd_vibe
+    - name: status
+      description: "System status"
+      handler: cmd_status
+    - name: uptime
+      description: "Bot uptime"
+      handler: cmd_uptime
+  features:
+    irc: true
+    eventsub: false
+    channel_points: false
+    redeems: []
+  mod_commands:
+    - timeout
+    - slow
+    - followers
+    - subonly
+    - persona_lock
+
+cross_platform:
+  shared_state: true
+  sync_interval_seconds: 30
+  persona_affinity_shared: true
+  conversation_history_shared: false

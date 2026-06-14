@@ -1,0 +1,23 @@
+[Unit]
+Description=LP_GodFather v4 — Edgerunner Flowing Persona Engine
+After=network-online.target ollama.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=fossnomade
+WorkingDirectory=/home/fossnomade/LP_GodFather
+EnvironmentFile=/home/fossnomade/LP_GodFather/.env
+ExecStart=/home/fossnomade/LP_GodFather/.venv/bin/python -m src.main
+Restart=always
+RestartSec=10
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/fossnomade/LP_GodFather/data
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

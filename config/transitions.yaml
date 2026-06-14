@@ -1,0 +1,183 @@
+context_analyzers:
+  time_of_day:
+    morning: "06:00-12:00"
+    afternoon: "12:00-18:00"
+    evening: "18:00-22:00"
+    night: "22:00-06:00"
+
+  sentiment_keywords:
+    hype:
+      - "gg"
+      - "pog"
+      - "ez"
+      - "clutch"
+      - "insane"
+      - "cracked"
+      - "goat"
+      - "hype"
+      - "lets go"
+      - "let's go"
+      - "preem"
+      - "nova"
+    deep:
+      - "meaning"
+      - "purpose"
+      - "why"
+      - "exist"
+      - "consciousness"
+      - "reality"
+      - "truth"
+      - "gene"
+      - "shadow"
+      - "gift"
+      - "siddhi"
+      - "key"
+    chill:
+      - "chill"
+      - "relax"
+      - "vibe"
+      - "cool"
+      - "easy"
+      - "smooth"
+      - "flow"
+      - "mellow"
+    frustrated:
+      - "fuck"
+      - "shit"
+      - "damn"
+      - "bullshit"
+      - "annoying"
+      - "broken"
+      - "stuck"
+      - "stress"
+      - "frustrated"
+    creative:
+      - "idea"
+      - "create"
+      - "build"
+      - "make"
+      - "design"
+      - "art"
+      - "write"
+      - "brainstorm"
+      - "spark"
+      - "inspire"
+    technical:
+      - "refactor"
+      - "debug"
+      - "code"
+      - "api"
+      - "database"
+      - "server"
+      - "deploy"
+      - "arch"
+      - "infra"
+      - "docker"
+    intense:
+      - "grind"
+      - "push"
+      - "limit"
+      - "hard"
+      - "heavy"
+      - "beast"
+      - "mode"
+      - "beastmode"
+      - "max"
+      - "power"
+
+  stream_segments:
+    warmup:
+      - "starting"
+      - "warmup"
+      - "intro"
+      - "hello"
+      - "hey chat"
+      - "how is everyone"
+    coding:
+      - "code"
+      - "coding"
+      - "dev"
+      - "build"
+      - "feature"
+      - "bug"
+      - "implement"
+      - "refactor"
+    gaming:
+      - "game"
+      - "play"
+      - "run"
+      - "boss"
+      - "level"
+      - "match"
+      - "round"
+      - "lets go"
+    react:
+      - "react"
+      - "comment"
+      - "chat"
+      - "question"
+      - "answer"
+      - "thoughts"
+    outro:
+      - "outro"
+      - "bye"
+      - "thanks"
+      - "next stream"
+      - "see you"
+      - "peace"
+
+transition_rules:
+  - condition: "sentiment:frustrated AND time:night"
+    target: "punk-philosopher"
+    weight_boost: 0.8
+    reason: "Late night frustration needs deconstruction"
+
+  - condition: "stream_segment:gaming AND sentiment:hype"
+    target: "choom"
+    weight_boost: 0.9
+    reason: "Gaming hype = CHOOM time"
+
+  - condition: "stream_segment:coding AND sentiment:technical"
+    target: "cyber-zen"
+    weight_boost: 0.8
+    reason: "Deep code focus = CYBER-ZEN mode"
+
+  - condition: "keywords:contains(gene keys,shadow,gift,siddhi,64 gates)"
+    target: "nova"
+    weight_boost: 0.9
+    reason: "Gene Keys language triggers NOVA"
+
+  - condition: "sentiment:intense"
+    target: "baki"
+    weight_boost: 0.7
+    reason: "Intensity calls BAKI"
+
+  - condition: "sentiment:chill AND time:evening"
+    target: "tropical-infinity"
+    weight_boost: 0.6
+    reason: "Evening chill = Tropical vibes"
+
+  - condition: "sentiment:creative AND sentiment:hype"
+    target: "monkey-mind"
+    weight_boost: 0.7
+    reason: "Creative hype = Monkey-Mind time"
+
+  - condition: "sentiment:deep AND time:night"
+    target: "punk-philosopher"
+    weight_boost: 0.5
+    reason: "Late night deep thoughts"
+
+  - condition: "sentiment:chill AND keywords:contains(foss,libre,open source)"
+    target: "vapor-foss"
+    weight_boost: 0.8
+    reason: "FOSS talk = VAPOR-FOSS mode"
+
+  - condition: "keywords:contains(discipline,mastery,way,honor)"
+    target: "samurai"
+    weight_boost: 0.8
+    reason: "Warrior code = SAMURAI mode"
+
+cooldowns:
+  min_transition_interval: 30
+  min_seconds_between_same_persona: 120
+  min_messages_before_transition: 3

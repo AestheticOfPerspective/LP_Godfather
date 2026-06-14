@@ -1,0 +1,22 @@
+services:
+  godfather:
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: lp-godfather
+    hostname: lp-godfather
+    env_file:
+      - ../.env
+    volumes:
+      - ../config:/app/config:ro
+      - ../data:/app/data
+    environment:
+      - OLLAMA_PRIMARY_URL=http://beast-ollama:11434
+      - PYTHONDONTWRITEBYTECODE=1
+    restart: unless-stopped
+    networks:
+      - beast-offline-ai_offline-ai
+
+networks:
+  beast-offline-ai_offline-ai:
+    external: true

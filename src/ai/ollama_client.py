@@ -41,11 +41,14 @@ class OllamaClient:
 
         self.max_history = int(os.getenv("MAX_HISTORY", "20"))
         self.client_timeout = float(os.getenv("OLLAMA_TIMEOUT", "60.0"))
+        self.num_predict = int(os.getenv("OLLAMA_NUM_PREDICT", "400"))
+        self.temperature = float(os.getenv("OLLAMA_TEMPERATURE", "0.7"))
 
         self._servers: List[OllamaServer] = []
         self._active_server: Tuple[str, str, str] = ("", "", "")
         self._cache_expires: float = 0
         self.cache_ttl: float = 30.0
+        self._server_lock = asyncio.Lock()
 
         self._init_servers()
 
@@ -86,19 +89,20 @@ class OllamaClient:
             return False
 
     async def get_active_server(self) -> Tuple[str, str, str]:
-        now = time.time()
-        if now < self._cache_expires and self._active_server[0]:
-            return self._active_server
-
-        for server in sorted(self._servers, key=lambda s: s.priority):
-            if await self.check_server(server.url):
-                self._active_server = (server.url, server.model, server.name)
-                self._cache_expires = now + self.cache_ttl
+        async with self._server_lock:
+            now = time.time()
+            if now < self._cache_expires and self._active_server[0]:
                 return self._active_server
 
-        self._active_server = ("", "", "OFFLINE")
-        self._cache_expires = now + 5
-        return self._active_server
+            for server in sorted(self._servers, key=lambda s: s.priority):
+                if await self.check_server(server.url):
+                    self._active_server = (server.url, server.model, server.name)
+                    self._cache_expires = now + self.cache_ttl
+                    return self._active_server
+
+            self._active_server = ("", "", "OFFLINE")
+            self._cache_expires = now + 5
+            return self._active_server
 
     async def list_models(self, url: Optional[str] = None) -> List[Dict]:
         if not url:
@@ -151,7 +155,17 @@ class OllamaClient:
             messages.extend(history[-self.max_history:])
         messages.append({"role": "user", "content": user_message})
 
-        payload = {"model": active_model, "messages": messages, "stream": False}
+        payload = {
+            "model": active_model,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "num_predict": self.num_predict,
+                "temperature": self.temperature,
+                "top_p": 0.9,
+                "top_k": 40,
+            },
+        }
         if images:
             payload["images"] = images
             del payload["messages"][0]["content"]

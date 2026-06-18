@@ -88,6 +88,31 @@ class Database:
                     timestamp REAL NOT NULL
                 );
 
+                CREATE TABLE IF NOT EXISTS user_memories (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id TEXT NOT NULL,
+                    key TEXT NOT NULL,
+                    value TEXT NOT NULL,
+                    category TEXT DEFAULT 'general',
+                    created_at REAL NOT NULL,
+                    updated_at REAL NOT NULL,
+                    UNIQUE(user_id, key)
+                );
+
+                CREATE TABLE IF NOT EXISTS allowed_groups (
+                    chat_id TEXT PRIMARY KEY,
+                    title TEXT DEFAULT '',
+                    added_by TEXT DEFAULT '',
+                    added_at REAL NOT NULL
+                );
+
+                CREATE TABLE IF NOT EXISTS rate_limits (
+                    user_id TEXT NOT NULL,
+                    command TEXT NOT NULL,
+                    last_call REAL NOT NULL,
+                    PRIMARY KEY (user_id, command)
+                );
+
                 CREATE INDEX IF NOT EXISTS idx_conv_user
                     ON conversations(user_id, platform);
                 CREATE INDEX IF NOT EXISTS idx_conv_chat
@@ -96,6 +121,8 @@ class Database:
                     ON conversations(timestamp);
                 CREATE INDEX IF NOT EXISTS idx_ollama_timestamp
                     ON ollama_stats(timestamp);
+                CREATE INDEX IF NOT EXISTS idx_memories_user
+                    ON user_memories(user_id);
             """)
 
     def upsert_user(self, user_id: str, platform: str, username: Optional[str] = None):
@@ -210,6 +237,132 @@ class Database:
             "total_tokens": counts["total_tokens"] or 0,
             "last_seen": user["last_seen"] if user else None,
         }
+
+    def load_recent_conversations_dict(self, user_id: str, platform: str,
+                                        limit: int = 20) -> list[dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute("""
+                SELECT role, content
+                FROM conversations
+                WHERE user_id = ? AND platform = ? AND role IN ('user', 'assistant')
+                ORDER BY timestamp DESC
+                LIMIT ?
+            """, (user_id, platform, limit)).fetchall()
+        result = []
+        for r in reversed(rows):
+            result.append({"role": r["role"], "content": r["content"]})
+        return result
+
+    def get_user_preferences(self, user_id: str) -> dict:
+        with self._get_conn() as conn:
+            row = conn.execute("""
+                SELECT persona_affinity FROM users WHERE id = ?
+            """, (user_id,)).fetchone()
+        if row and row["persona_affinity"]:
+            try:
+                return json.loads(row["persona_affinity"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+        return {}
+
+    def save_memory(self, user_id: str, key: str, value: str,
+                     category: str = "general") -> None:
+        now = time.time()
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO user_memories (user_id, key, value, category, created_at, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?)
+                ON CONFLICT(user_id, key) DO UPDATE SET
+                    value = excluded.value,
+                    category = excluded.category,
+                    updated_at = excluded.updated_at
+            """, (user_id, key, value, category, now, now))
+
+    def get_memory(self, user_id: str, key: str) -> Optional[str]:
+        with self._get_conn() as conn:
+            row = conn.execute("""
+                SELECT value FROM user_memories
+                WHERE user_id = ? AND key = ?
+            """, (user_id, key)).fetchone()
+        return row["value"] if row else None
+
+    def get_all_memories(self, user_id: str,
+                          category: Optional[str] = None) -> list[dict]:
+        with self._get_conn() as conn:
+            if category:
+                rows = conn.execute("""
+                    SELECT key, value, category, updated_at
+                    FROM user_memories
+                    WHERE user_id = ? AND category = ?
+                    ORDER BY updated_at DESC
+                """, (user_id, category)).fetchall()
+            else:
+                rows = conn.execute("""
+                    SELECT key, value, category, updated_at
+                    FROM user_memories
+                    WHERE user_id = ?
+                    ORDER BY updated_at DESC
+                """, (user_id,)).fetchall()
+        return [dict(r) for r in rows]
+
+    def delete_memory(self, user_id: str, key: str) -> bool:
+        with self._get_conn() as conn:
+            cur = conn.execute("""
+                DELETE FROM user_memories WHERE user_id = ? AND key = ?
+            """, (user_id, key))
+            return cur.rowcount > 0
+
+    def is_group_allowed(self, chat_id: str) -> bool:
+        with self._get_conn() as conn:
+            row = conn.execute(
+                "SELECT 1 FROM allowed_groups WHERE chat_id = ?", (chat_id,)
+            ).fetchone()
+        return row is not None
+
+    def allow_group(self, chat_id: str, title: str = "", added_by: str = ""):
+        with self._get_conn() as conn:
+            conn.execute("""
+                INSERT INTO allowed_groups (chat_id, title, added_by, added_at)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT(chat_id) DO UPDATE SET
+                    title = excluded.title,
+                    added_at = excluded.added_at
+            """, (chat_id, title, added_by, time.time()))
+
+    def remove_group(self, chat_id: str) -> bool:
+        with self._get_conn() as conn:
+            cur = conn.execute("DELETE FROM allowed_groups WHERE chat_id = ?", (chat_id,))
+            return cur.rowcount > 0
+
+    def list_allowed_groups(self) -> list[dict]:
+        with self._get_conn() as conn:
+            rows = conn.execute(
+                "SELECT chat_id, title, added_by, added_at FROM allowed_groups ORDER BY added_at DESC"
+            ).fetchall()
+        return [dict(r) for r in rows]
+
+    def check_rate_limit(self, user_id: str, command: str,
+                          cooldown_seconds: int = 2) -> tuple[bool, float]:
+        now = time.time()
+        with self._get_conn() as conn:
+            row = conn.execute("""
+                SELECT last_call FROM rate_limits
+                WHERE user_id = ? AND command = ?
+            """, (user_id, command)).fetchone()
+            if row:
+                elapsed = now - row["last_call"]
+                if elapsed < cooldown_seconds:
+                    return False, cooldown_seconds - elapsed
+                conn.execute("""
+                    UPDATE rate_limits SET last_call = ? WHERE user_id = ? AND command = ?
+                """, (now, user_id, command))
+            else:
+                conn.execute("""
+                    INSERT INTO rate_limits (user_id, command, last_call)
+                    VALUES (?, ?, ?)
+                """, (user_id, command, now))
+            conn.commit()
+        return True, 0.0
 
     def get_global_stats(self) -> dict:
         with self._get_conn() as conn:

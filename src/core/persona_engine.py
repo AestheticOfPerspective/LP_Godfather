@@ -2,6 +2,7 @@ from __future__ import annotations
 import random
 import time
 import re
+import asyncio
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Any, Tuple
 from enum import Enum
@@ -12,6 +13,7 @@ import yaml
 
 
 class PersonaName(str, Enum):
+    GODFATHER = "godfather"
     CHOOM = "choom"
     NOVA = "nova"
     CYBER_ZEN = "cyber-zen"
@@ -22,6 +24,13 @@ class PersonaName(str, Enum):
     TROPICAL_INFINITY = "tropical-infinity"
     MONKEY_MIND = "monkey-mind"
 
+    THE_ANCHOR = "the-anchor"
+    RECRUITER_X = "recruiter-x"
+    CODE_HAMMER = "code-hammer"
+    MIND_MIRROR = "mind-mirror"
+    SHARK = "shark"
+    PRESS_ROOM = "press-room"
+
 
 @dataclass
 class Persona:
@@ -29,6 +38,7 @@ class Persona:
     display_name: str
     emoji: str
     style: str
+    guardrails: List[str]
     triggers: List[str]
     time_weights: Dict[str, float]
     transition_to: str
@@ -66,6 +76,7 @@ class PersonaFlowEngine:
         self.transition_rules, self.sentiment_keywords, self.stream_keywords = self._load_transition_rules()
         self.cooldowns = self._load_cooldowns()
         self.states: Dict[str, PersonaState] = {}
+        self._lock = asyncio.Lock()
 
         self.time_period_weights = {
             "morning": 1.0, "afternoon": 0.8,
@@ -83,6 +94,7 @@ class PersonaFlowEngine:
                 display_name=p["name"],
                 emoji=p["emoji"],
                 style=p["style"],
+                guardrails=p.get("guardrails", []),
                 triggers=[t.lower() for t in p["triggers"]],
                 time_weights=p["time_weight"],
                 transition_to=p["transition_phrases"]["to"],
@@ -128,12 +140,8 @@ class PersonaFlowEngine:
     def get_state(self, platform: str, chat_id: str, user_id: str) -> PersonaState:
         key = self._state_key(platform, chat_id, user_id)
         if key not in self.states:
-            period = self._get_time_period()
-            best = max(
-                self.personas.values(),
-                key=lambda p: p.time_weights.get(period, 0)
-            )
-            self.states[key] = PersonaState(current=best.name)
+            default = PersonaName("godfather")
+            self.states[key] = PersonaState(current=default)
         return self.states[key]
 
     def _get_time_period(self) -> str:
@@ -208,6 +216,8 @@ class PersonaFlowEngine:
                     "creative": [PersonaName.MONKEY_MIND, PersonaName.TROPICAL_INFINITY],
                     "technical": [PersonaName.CYBER_ZEN, PersonaName.CHOOM],
                     "intense": [PersonaName.BAKI, PersonaName.SAMURAI],
+                    "practical": [PersonaName.GODFATHER],
+                    "personal_support": [PersonaName.TROPICAL_INFINITY],
                 }
                 for p in smap.get(scat, []):
                     weights[p] = weights.get(p, 0) + score * 0.4
@@ -262,48 +272,41 @@ class PersonaFlowEngine:
             return any(results)
         return all(results) if results else False
 
-    def select_next(self, platform: str, chat_id: str, user_id: str,
-                    message: str, stream_segment: Optional[str] = None) -> Tuple[PersonaName, bool]:
-        state = self.get_state(platform, chat_id, user_id)
-        state.messages_since_transition += 1
+    async def select_next(self, platform: str, chat_id: str, user_id: str,
+                          message: str, stream_segment: Optional[str] = None) -> Tuple[PersonaName, bool]:
+        async with self._lock:
+            state = self.get_state(platform, chat_id, user_id)
+            state.messages_since_transition += 1
 
-        now = time.time()
-        if now - state.last_transition < self.cooldowns.get("min_transition_interval", 30):
-            return state.current, False
+            now = time.time()
+            if now - state.last_transition < self.cooldowns.get("min_transition_interval", 30):
+                return state.current, False
 
-        if state.messages_since_transition < self.cooldowns.get("min_messages_before_transition", 3):
-            return state.current, False
+            if state.messages_since_transition < self.cooldowns.get("min_messages_before_transition", 3):
+                return state.current, False
 
-        context = self.analyze_context(message, platform, chat_id, user_id, stream_segment)
-        weights = self.compute_weights(state, context)
+            context = self.analyze_context(message, platform, chat_id, user_id, stream_segment)
+            weights = self.compute_weights(state, context)
 
-        candidates = [(p, w) for p, w in weights.items() if w > 0]
-        if not candidates:
-            return state.current, False
+            candidates = [(p, w) for p, w in weights.items() if w > 0]
+            if not candidates:
+                return state.current, False
 
-        candidates.sort(key=lambda x: x[1], reverse=True)
-        top = candidates[0]
+            candidates.sort(key=lambda x: x[1], reverse=True)
+            top = candidates[0]
 
-        if top[0] == state.current:
-            if state.previous and random.random() < 0.1:
-                back_weight = weights.get(state.previous, 0)
-                if back_weight > 0.1:
-                    self._apply_transition(state, state.previous)
-                    return state.previous, True
-            return state.current, False
+            if top[0] == state.current:
+                return state.current, False
 
-        if top[1] < 0.15:
-            return state.current, False
+            if top[1] < 0.25:
+                return state.current, False
 
-        if random.random() > top[1]:
-            return state.current, False
+            same_persona_cooldown = self.cooldowns.get("min_seconds_between_same_persona", 120)
+            if top[0] == state.previous and (now - state.last_transition) < same_persona_cooldown:
+                return state.current, False
 
-        same_persona_cooldown = self.cooldowns.get("min_seconds_between_same_persona", 120)
-        if top[0] == state.previous and (now - state.last_transition) < same_persona_cooldown:
-            return state.current, False
-
-        self._apply_transition(state, top[0])
-        return state.current, True
+            self._apply_transition(state, top[0])
+            return state.current, True
 
     def _apply_transition(self, state: PersonaState, target: PersonaName):
         state.previous = state.current
@@ -319,24 +322,25 @@ class PersonaFlowEngine:
         if state.previous in state.affinity:
             state.affinity[state.previous] = max(state.affinity[state.previous] - 0.02, 0)
 
-    def force_persona(self, platform: str, chat_id: str, user_id: str,
-                      target: PersonaName, lock: bool = False) -> Tuple[str, bool]:
-        state = self.get_state(platform, chat_id, user_id)
-        old = state.current
-        if old == target and not lock:
-            return f"Already in {target} mode!", False
+    async def force_persona(self, platform: str, chat_id: str, user_id: str,
+                            target: PersonaName, lock: bool = False) -> Tuple[str, bool]:
+        async with self._lock:
+            state = self.get_state(platform, chat_id, user_id)
+            old = state.current
+            if old == target and not lock:
+                return f"Already in {target} mode!", False
 
-        self._apply_transition(state, target)
-        if lock:
-            state.locked = True
-            state.locked_by = user_id
+            self._apply_transition(state, target)
+            if lock:
+                state.locked = True
+                state.locked_by = user_id
 
-        pdata = self.personas[target]
-        msg = pdata.transition_to if old != target else f"Staying in {pdata.display_name} mode."
-        return msg, True
+            pdata = self.personas[target]
+            msg = pdata.transition_to if old != target else f"Staying in {pdata.display_name} mode."
+            return msg, True
 
-    def set_vibe(self, platform: str, chat_id: str, user_id: str,
-                 vibe: str) -> Tuple[Optional[PersonaName], str]:
+    async def set_vibe(self, platform: str, chat_id: str, user_id: str,
+                       vibe: str) -> Tuple[Optional[PersonaName], str]:
         vibe_map = {
             "hype": PersonaName.CHOOM,
             "deep": PersonaName.NOVA,
@@ -353,10 +357,11 @@ class PersonaFlowEngine:
             available = ", ".join(vibe_map.keys())
             return None, f"Unknown vibe '{vibe}'. Try: {available}"
 
-        state = self.get_state(platform, chat_id, user_id)
-        self._apply_transition(state, target)
-        pdata = self.personas[target]
-        return target, pdata.transition_to
+        async with self._lock:
+            state = self.get_state(platform, chat_id, user_id)
+            self._apply_transition(state, target)
+            pdata = self.personas[target]
+            return target, pdata.transition_to
 
     def get_transition_message(self, pname: PersonaName, incoming: bool = True) -> str:
         pdata = self.personas[pname]

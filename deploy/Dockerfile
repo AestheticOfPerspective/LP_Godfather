@@ -16,12 +16,16 @@ COPY --from=deps /usr/local/bin /usr/local/bin
 
 COPY src/ ./src/
 COPY config/ ./config/
-RUN mkdir -p /app/data
+RUN mkdir -p /app/data && \
+    useradd -m -u 1000 godfather && \
+    chown -R godfather:godfather /app/data
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONPATH=/app
 
+USER godfather
+
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-    CMD python -c "import src; print('OK')" || exit 1
+    CMD python -c "import os,sys; sys.exit(0 if os.path.exists('/app/src/main.py') else 1)" || exit 1
 
 ENTRYPOINT ["python", "-m", "src.main"]

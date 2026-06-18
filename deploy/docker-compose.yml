@@ -1,18 +1,51 @@
 services:
-  godfather:
+  telegram:
     build:
       context: ..
       dockerfile: deploy/Dockerfile
-    container_name: lp-godfather
-    hostname: lp-godfather
+    container_name: godfather-bot
+    hostname: godfather-bot
     env_file:
       - ../.env
     volumes:
       - ../config:/app/config:ro
       - ../data:/app/data
     environment:
+      - BOT_MODE=telegram
       - OLLAMA_PRIMARY_URL=http://beast-ollama:11434
       - PYTHONDONTWRITEBYTECODE=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib; assert pathlib.Path('/proc/1/cmdline').read_bytes().find(b'src.main') >= 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+    restart: unless-stopped
+    networks:
+      - beast-offline-ai_offline-ai
+
+  twitch:
+    profiles: ["twitch"]
+    build:
+      context: ..
+      dockerfile: deploy/Dockerfile
+    container_name: godfather-twitch
+    hostname: godfather-twitch
+    env_file:
+      - ../.env
+    volumes:
+      - ../config:/app/config:ro
+      - ../data:/app/data
+    environment:
+      - BOT_MODE=twitch
+      - OLLAMA_PRIMARY_URL=http://beast-ollama:11434
+      - PYTHONDONTWRITEBYTECODE=1
+    healthcheck:
+      test: ["CMD", "python", "-c", "import pathlib; assert pathlib.Path('/proc/1/cmdline').read_bytes().find(b'src.main') >= 0"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     restart: unless-stopped
     networks:
       - beast-offline-ai_offline-ai

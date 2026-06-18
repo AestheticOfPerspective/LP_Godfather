@@ -1,0 +1,20 @@
+2026-06-19 01:51:07,717 - godfather - INFO - ==================================================
+2026-06-19 01:51:07,718 - godfather - INFO - LP_GodFather v4 — Edgerunner Flowing Persona Engine
+2026-06-19 01:51:07,718 - godfather - INFO - ==================================================
+2026-06-19 01:51:07,718 - godfather - INFO - Personas loaded: 16
+2026-06-19 01:51:07,718 - godfather - INFO - Ollama primary: http://127.0.0.1:11436
+2026-06-19 01:51:07,718 - godfather - INFO - Ollama secondary: http://100.66.191.86:11434
+2026-06-19 01:51:07,887 - src.commands - INFO - Registered command: /8ball
+2026-06-19 01:51:07,887 - src.commands - INFO - Registered command: /brand_calibrate
+2026-06-19 01:51:07,888 - src.commands - INFO - Registered command: /comedy_test
+2026-06-19 01:51:07,888 - src.commands - INFO - Registered command: /media_value_router
+2026-06-19 01:51:07,888 - src.commands - INFO - Registered command: /pick
+2026-06-19 01:51:07,888 - src.commands - INFO - Registered command: /privacy_pass
+2026-06-19 01:51:07,888 - src.commands - INFO - Registered command: /risk_mirror
+2026-06-19 01:51:07,889 - src.commands - INFO - Registered command: /roll
+2026-06-19 01:51:07,889 - src.commands - INFO - Registered command: /subtitle_adapt
+2026-06-19 01:51:07,889 - src.commands - INFO - Registered command: /tarot
+2026-06-19 01:51:07,943 - godfather - INFO - Starting Telegram bot...
+2026-06-19 01:51:08,153 - src.platforms.telegram.bot - INFO - Telegram bot initialized
+2026-06-19 01:51:08,189 - apscheduler.scheduler - INFO - Scheduler started
+2026-06-19 01:51:08,189 - telegram.ext.Application - INFO - Application started

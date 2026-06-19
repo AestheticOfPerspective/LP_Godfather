@@ -12,7 +12,16 @@ venv/
 data/*.db
 data/*.db-*
 data/*.db.*
+data/*.log
 data/__pycache__/
+
+# Environment
+.env
+.env.*
+
+# Backups
+*.bak
+*.backup
 
 # Docker
 deploy/tailscale-state/

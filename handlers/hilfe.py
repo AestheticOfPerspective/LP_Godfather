@@ -37,6 +37,7 @@ HELP_CATEGORIES = {
             ("/prompt [Text]", "Prompt-Engineering-Analyse"),
             ("/orchestrate [Frage]", "Multi-Persona Perspektiven"),
             ("/tarot", "Nyx.exe Tarot-Orakel"),
+            ("/comedy_test [Idee]", "Clip-Idee gegen Comedy Gates prüfen"),
             ("/vibe [preset]", "DJ-Agent Playlist erstellen"),
             ("/clear", "Gesprächsverlauf löschen"),
             ("🎙️ Sprachnachricht", "Wird transkribiert + KI antwortet"),

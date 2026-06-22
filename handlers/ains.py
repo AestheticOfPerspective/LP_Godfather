@@ -17,6 +17,23 @@ from handlers.intents import handle_natural_intent
 from utils.storage import db
 
 
+_CRITICAL_PATTERNS = re.compile(
+    r"(bullshit|mist|fehler|falsch|kaputt|nicht richtig|nicht funktionier|"
+    r"blöd|dumm|hör auf|lass es|nerv|scheiß|scheiss|was soll das|"
+    r"copycat|kalt erwischt|rauswinden|und jetzt dieser|"
+    r"du spinnst|das stimmt nicht|schwachsinn)",
+    re.IGNORECASE,
+)
+
+
+def _is_critical_or_corrective(text: str) -> bool:
+    """Prüft ob die User-Nachricht kritisch/korrigierend gegenüber dem Bot ist.
+
+    In solchen Fällen keine Persona-Empfehlung — das wirkt taub.
+    """
+    return bool(_CRITICAL_PATTERNS.search(text))
+
+
 async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     """Normaler Text -> KI-Antwort.
 
@@ -35,16 +52,17 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     bot_username = context.bot.username.lower()
     reply = update.message.reply_to_message
 
-    # Gruppen: nur triggern bei Mention oder Reply auf Bot.
+    # Gruppen: nur triggern bei Mention oder Reply auf DICH (nicht auf andere Bots).
     if chat.type in ("group", "supergroup"):
-        is_reply_to_bot = (
+        is_reply_to_self = (
             update.message.reply_to_message
             and update.message.reply_to_message.from_user
             and update.message.reply_to_message.from_user.is_bot
+            and update.message.reply_to_message.from_user.id == context.bot.id
         )
         is_mentioned = f"@{bot_username}" in text.lower()
 
-        if not is_reply_to_bot and not is_mentioned:
+        if not is_reply_to_self and not is_mentioned:
             return
 
         text = re.sub(rf"@{re.escape(bot_username)}\b", "", text, flags=re.IGNORECASE).strip()
@@ -87,7 +105,7 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
 
     suggestion = suggest_persona(text, persona_key)
     hint = ""
-    if suggestion:
+    if suggestion and not _is_critical_or_corrective(text):
         s_name = PERSONAS[suggestion]["name"]
         hint = f"\n\n💡 <i>Tipp: {s_name} passt besser → /persona</i>"
 

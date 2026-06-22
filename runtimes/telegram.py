@@ -34,6 +34,7 @@ from telegram.ext import (
     filters,
 )
 from telegram.constants import ParseMode, ChatMemberStatus
+from html import escape
 
 from config import BOT_TOKEN, GEMINI_API_KEY, ADMIN_IDS, WELCOME_ENABLED
 from handlers.ai import (
@@ -88,6 +89,7 @@ from handlers.feedback import (
 )
 from handlers.skill_creator import cmd_skills
 from handlers.maintenance import cmd_maintenance
+from handlers.comedy_test import check_clip
 from utils.decorators import admin_only, group_only
 from utils.storage import db
 
@@ -322,6 +324,28 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     )
 
 
+async def cmd_comedy_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if not context.args:
+        await update.message.reply_text(
+            "❓ Nutzung: <code>/comedy-test Deine Clip-Idee hier</code>\n\n"
+            "Prueft eine Clip-Idee gegen die Comedy Gates:\n"
+            "• SATIRE — Ziel klar?\n"
+            "• IRONY — Kontrast ohne Insiderwissen?\n"
+            "• DARK HUMOR — System/Selbst, nicht Person?\n"
+            "• DE/EN/RU SAFE — Uebersetzbar ohne Target-Shift?",
+            parse_mode=ParseMode.HTML,
+        )
+        return
+
+    idea = " ".join(context.args)
+    msg = await update.message.reply_text("⏳ Comedy-Gates werden geprueft...")
+    result = await check_clip(idea)
+    await msg.edit_text(
+        f"<b>💀 Comedy Gate Check</b>\n\n<pre>{escape(result)}</pre>",
+        parse_mode=ParseMode.HTML,
+    )
+
+
 async def cmd_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
         await update.message.reply_text(
@@ -549,6 +573,9 @@ def run() -> None:
     app.add_handler(CommandHandler("ask", cmd_ask))
     app.add_handler(CommandHandler("prompt", cmd_prompt))
     app.add_handler(CommandHandler("orchestrate", cmd_orchestrate))
+    app.add_handler(CommandHandler("comedy_test", cmd_comedy_test))
+    app.add_handler(CommandHandler("comedytest", cmd_comedy_test))
+    app.add_handler(CommandHandler("ctest", cmd_comedy_test))
     app.add_handler(CommandHandler("tarot", cmd_tarot))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("vibe", cmd_vibe))

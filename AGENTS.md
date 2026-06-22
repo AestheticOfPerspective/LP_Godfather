@@ -28,3 +28,11 @@
 
 - In Docker mode, services expect internal hostnames (`ollama` service alias).
 - In local mode, env host values may differ from container defaults.
+
+## Prompt Architecture
+
+- Bot personality = `SOUL.md` + `PERSONA.md` + `GOLDEN_EXAMPLES.md` (Repo Root)
+- `handlers/persona_loader.py:assemble_base_prompt()` loads them into every AI query
+- 7 personas in `handlers/ai.py:PERSONAS` (GodFather, Cyber-Zen, Monkey-Mind, etc.)
+- Intent router in `handlers/intents.py` catches natural language ("merk dir", "clip das")
+- Fixes deployed 2026-06-03: template-strip (GOLDEN_EXAMPLES.md), mid-sentence-guard (num_predict=600), persona-prefix server-side strip

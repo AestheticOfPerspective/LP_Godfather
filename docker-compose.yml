@@ -1,36 +1,19 @@
-version: "3.8"
-
 services:
-  ollama:
-    image: ollama/ollama:latest
-    container_name: ollama
-    restart: unless-stopped
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    # GPU-Support (auskommentieren wenn keine NVIDIA GPU):
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
-
   godfather-bot:
     build: .
     container_name: godfather-bot
     restart: unless-stopped
-    depends_on:
-      - ollama
     env_file:
       - .env
     environment:
       - BOT_MODE=telegram
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://beast-ollama:11434
+      - WHISPER_DEVICE=cpu
     volumes:
       - ./data:/app/data
+    networks:
+      - lp_godfather_deploy_default
+      - beast-offline-ai_offline-ai
 
   twitch-bot:
     profiles:
@@ -38,15 +21,20 @@ services:
     build: .
     container_name: godfather-twitch
     restart: unless-stopped
-    depends_on:
-      - ollama
     env_file:
       - .env
     environment:
       - BOT_MODE=twitch
-      - OLLAMA_HOST=http://ollama:11434
+      - OLLAMA_HOST=http://beast-ollama:11434
+      - WHISPER_DEVICE=cpu
     volumes:
       - ./data:/app/data
+    networks:
+      - lp_godfather_deploy_default
+      - beast-offline-ai_offline-ai
 
-volumes:
-  ollama_data:
+networks:
+  lp_godfather_deploy_default:
+    driver: bridge
+  beast-offline-ai_offline-ai:
+    external: true

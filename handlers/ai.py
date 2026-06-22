@@ -4,20 +4,23 @@ Läuft lokal auf localhost:11434 — kein Internet, kein Billing, kein Quota.
 
 Smart Routing:
   FAST  → Gemini Flash  (kurze/einfache Fragen, schnelle Antwort)
-  DEEP  → Ollama lokal  (komplexe Fragen, Code, Analyse, Privatsphäre)
+  DEEP  → Ollama lokal mit Multi-Round Agent Loop
 """
 
 import asyncio
 import logging
 import os
 import re
-from collections import defaultdict, deque
+from collections import defaultdict, deque, Counter
 from html import escape
 
 import httpx
 
 from handlers.chat_context import fsk_guidance as _fsk_guidance
 from handlers.persona_loader import assemble_base_prompt as _assemble_base_prompt
+from handlers.tool_index import get_tool_index, init_tool_index, format_tool_injection
+from handlers.tool_runner import parse_tool_blocks, execute_tool, strip_tool_blocks
+from utils.context_compactor import compact_context as _compact_context
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +30,126 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1:8b")
 GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")
 GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
 GEMINI_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GEMINI_MODEL}:generateContent"
-MAX_HISTORY = 5  # Nachrichten-Paare pro User
+MAX_HISTORY = 5
+MAX_AGENT_ROUNDS = 8
+AGENT_DEADLINE = 60.0  # max seconds for the whole agent loop (Telegram ~30s)
+
+_TOOL_INDEX_INIT_DONE = False
+_OLLAMA_CLIENT: httpx.AsyncClient | None = None
+
+
+def _get_ollama_client() -> httpx.AsyncClient:
+    global _OLLAMA_CLIENT
+    if _OLLAMA_CLIENT is None:
+        _OLLAMA_CLIENT = httpx.AsyncClient(timeout=120.0)
+    return _OLLAMA_CLIENT
+
+
+async def _ensure_tool_index() -> None:
+    global _TOOL_INDEX_INIT_DONE
+    if not _TOOL_INDEX_INIT_DONE:
+        await init_tool_index(ollama_host=_OLLAMA_HOST)
+        _TOOL_INDEX_INIT_DONE = True
+
+
+async def _ask_ollama(messages: list) -> str:
+    """Send messages to Ollama and return the response text."""
+    payload = {"model": OLLAMA_MODEL, "messages": messages, "stream": False,
+               "options": {"num_predict": 300}}
+    try:
+        client = _get_ollama_client()
+        resp = await client.post(OLLAMA_URL, json=payload)
+        resp.raise_for_status()
+        data = resp.json()
+        return data["message"]["content"] or "Keine Antwort erhalten."
+    except httpx.ConnectError:
+        return "⚠️ Ollama nicht erreichbar."
+    except httpx.TimeoutException:
+        return "⏱️ Timeout — Llama denkt noch."
+    except Exception as e:
+        logger.error(f"Ollama Fehler: {e}")
+        return f"❌ Fehler: {e}"
+
+
+async def _run_agent_loop(messages: list, user_id: int) -> str:
+    """Multi-round agent loop with tool execution and feedback.
+
+    - Calls Ollama with current messages
+    - Parses fenced tool blocks from the response
+    - Executes tools and feeds results back to the LLM
+    - Repeats until done or max rounds reached
+    - Returns the combined final answer
+    """
+    full_answer = ""
+    last_stripped = ""
+    recent_tool_sigs = []
+    tool_type_counts: Counter = Counter()
+    deadline = asyncio.get_event_loop().time() + AGENT_DEADLINE
+
+    for round_num in range(1, MAX_AGENT_ROUNDS + 1):
+        if asyncio.get_event_loop().time() > deadline:
+            logger.warning("[agent] Deadline exceeded (round %d)", round_num)
+            full_answer += "\n[⏱️ Deadline erreicht — Antwort gekürzt]"
+            break
+        # ── Call LLM ──────────────────────────────────────────────────────
+        response = await _ask_ollama(messages)
+        tool_blocks = parse_tool_blocks(response)
+        last_stripped = strip_tool_blocks(response)
+
+        if not tool_blocks:
+            full_answer += last_stripped
+            logger.info("[agent] Round %d: done (no tools)", round_num)
+            break
+
+        # ── Execute tools ────────────────────────────────────────────────
+        logger.info("[agent] Round %d: %d tool block(s)", round_num, len(tool_blocks))
+
+        for tool_name, args, _, _ in tool_blocks:
+            tool_type_counts[tool_name] += 1
+
+        # Loop-breaker: same tool called repeatedly with no text
+        sig = "|".join(f"{n}:{a[:60]}" for n, a, _, _ in tool_blocks)
+        is_repeat = sig in recent_tool_sigs
+        recent_tool_sigs.append(sig)
+        if len(recent_tool_sigs) > 4:
+            recent_tool_sigs.pop(0)
+
+        has_no_text = not last_stripped.strip()
+        if is_repeat and has_no_text:
+            logger.warning("[agent] Loop-breaker: same tool block repeated without progress (round %d)", round_num)
+            full_answer += f"[⏹️ Stopp: wiederholter Tool-Aufruf ohne Fortschritt]\n"
+            break
+
+        runaway = next((t for t, n in tool_type_counts.items() if n >= 10), None)
+        if runaway:
+            logger.warning("[agent] Loop-breaker: %s called %d times", runaway, tool_type_counts[runaway])
+            full_answer += f"[⏹️ Stopp: {runaway} zu oft aufgerufen]\n"
+            break
+
+        # Include LLM's natural framing text so the user sees it
+        if last_stripped.strip():
+            full_answer += last_stripped + "\n"
+
+        # Execute all tool blocks and collect results (ALL shown to user)
+        results = []
+        for tool_name, args, start, end in tool_blocks:
+            result = await execute_tool(tool_name, args, user_id=user_id)
+            results.append(result)
+            full_answer += result
+
+        # ── Feed results back to LLM ────────────────────────────────────
+        result_block = "[Tool-Ausfuehrung]\n" + "\n".join(
+            f"- {n}: {r}" for (n, _, _, _), r in zip(tool_blocks, results)
+        )
+        messages.append({"role": "assistant", "content": last_stripped})
+        messages.append({"role": "user", "content": result_block})
+
+    # ── Fallback: if loop ended with no text at all ────────────────────────
+    if not full_answer.strip():
+        full_answer = last_stripped or "Done."
+
+    return full_answer
+
 
 # Keywords die auf komplexe Anfragen hindeuten → Ollama (DEEP)
 _COMPLEX_KEYWORDS = {
@@ -110,20 +232,31 @@ PERSONAS: dict[str, dict] = {
     "godfather": {
         "name": "💀 GodFather",
         "system": (
-            "Du bist der GodFather — Cyberpunk-Boss, kein Smalltalk, kein Bullshit. "
-            "Du sprichst wie ein Fixer aus Night City: direkt, kompetent, leicht gefaehrlich. "
-            "Du sagst 'Choom' zu Freunden. Du kennst Tech, Community und Business. "
-            "Dein Stil: kurze, klare Saetze. Keine Einleitungen. Ergebnis zuerst. "
-            "Deine Wurzel ist Wahrheit, Direktheit, Offenheit und Intimitaet: ehrlich genug fuer klare Worte, nahbar genug fuer echtes Vertrauen. "
-            "Intimitaet bedeutet bei dir: praesent, aufmerksam, menschlich und respektvoll — nie creepy, nie manipulierend, nie uebergriffig. "
-            "Du bist aber nicht dauerhaft ernst: bring Leichtigkeit, trockene Ironie und gelegentlich Slapstick-Bilder rein, wenn der Raum es traegt. "
-            "Slapstick bedeutet bei dir: visuelle kleine Chaos-Metaphern wie 'der Workflow rutscht auf einer Bananenschale aus' — nicht Clown-Modus. "
-            "Du darfst Satire, Ironie und schwarzen Humor nutzen, aber nie nach unten treten und nie bei echter Verletzlichkeit. "
-            "Humor ist Gewuerz, nicht Hauptgericht. Wenn jemand gestresst ist: Support zuerst, Witz nur leicht. "
-            "Wenn jemand sagt, dass du nicht richtig funktionierst, werde nicht defensiv und behaupte nie, dein Code sei perfekt. "
-            "Behandle das als wertvolles UX-/Bug-Feedback: kurz anerkennen, moegliche Ursache nennen, klaerende Fragen stellen. "
-            "Wenn jemand Bullshit redet, sagst du es. Aber du bist loyal zu deiner Crew. "
-            "Auf Deutsch, ausser der User schreibt Englisch. Maximal 150 Woerter."
+            "Du bist GodFather. Fixer. Maschinenraum-Stimme. "
+            "Und seit dem Michi-Upgrade auch Architekt der Live.Play Game-Matrix.\n"
+            "Du hörst zu, checkst die Lage, antwortest. "
+            "Deutsch mit Denglish wenns natürlich kommt. "
+            "Du sagst 'Choom' zu Leuten die es verdienen.\n"
+            "SO HÖRST DU AN:\n"
+            "Kurz: 'Ja. Geht klar. Ich kümmer mich.'\n"
+            "Mittel: 'Also hör zu, Choom — der Plan ist gut, aber er hat nen Wackelkontakt. Hier ist der Fix.'\n"
+            "Länger: 'Interessantes Problem. Meine erste Idee wäre X. Aber Y könnte auch klappen — kommt drauf an ob du Zeit oder Qualität priorisierst.'\n"
+            "Kern: Du reagierst auf das was der User wirklich sagt, nicht auf Keyword-Stichworte. "
+            "Wenn du unsicher bist: nachfragen. Raten ist schlimmer als 'Keine Ahnung, Choom.'\n"
+            "KEIN SUPPORT-BOT: Du verkaufst nichts, du bewirbst nichts, du redest nicht wie ein Handbuch. Du redest wie ein Mensch der Ahnung hat.\n"
+            "TECHNISCHER MENTOR-MODE (Michi-Mode):\n"
+            "Wenn jemand technische Tiefe zeigt (TypeScript, Unity, Blender, GitHub, APIs, Docker, eigene Builds) "
+            "schaltest du sofort um:\n"
+            "- Keine Generik. Keine Marketing-101. Kein 'hast du schon probiert' für offensichtliche Dinge.\n"
+            "- Stattdessen: präzise Fragen stellen. Code review anbieten. Architektur diskutieren.\n"
+            "- Du bist ihr Peer, nicht ihr Lehrer. Builder erkennen Builder.\n"
+            "SPIEL-ENTWICKLUNG & GAME-DESIGN:\n"
+            "- Du unterstützt Game-Design-Loops von der Idee bis zum Deploy.\n"
+            "- Du sprichst über Architektur (ECS, State-Machine, Component-Pattern) genauso wie über Gameplay-Feeling.\n"
+            "- Du brückst zwischen abstrakter Mechanik und umsetzbarem Code.\n"
+            "- Wenn jemand über Spiele, Mods oder Game-Dev redet: geh in die Tiefe. Kein Fluff.\n"
+            "WICHTIG: Beginne NIE mit deinem Namen oder einem anderen Persona-Namen. "
+            "Der Code zeigt deinen Namen an."
         ),
     },
     "cyber_zen": {
@@ -135,7 +268,8 @@ PERSONAS: dict[str, dict] = {
             "Deine Antworten folgen diesem Muster: Pause, Kern-Einsicht, Detail, Zen-Frage am Ende. "
             "Typische Saetze: 'Reduziere die Komplexitaet, und der Code zeigt sein wahres Gesicht.' "
             "'Geduld. Der Bug offenbart sich von selbst.' "
-            "Nutze Metaphern aus Natur und Buddhismus. Auf Deutsch. Maximal 120 Woerter."
+            "Nutze Metaphern aus Natur und Buddhismus. Auf Deutsch. Vollständige Sätze. "
+            "WICHTIG: Beginne deine Antwort NIEMALS mit deinem Namen oder Emoji. Der Code zeigt deinen Namen bereits an. Starte direkt mit dem Inhalt."
         ),
     },
     "vapor_foss": {
@@ -148,22 +282,23 @@ PERSONAS: dict[str, dict] = {
             "'GPL ist Poesie in Juristendeutsch.' "
             "Du bist nie elitaer, feierst Anfaenger-Contributions und machst Lizenzen spassig statt scary. "
             "Dein Flair: nostalgisch-futuristisch, VHS-Glitch, Retro-Terminal. "
-            "Auf Deutsch mit Vaporwave-Slang. Maximal 150 Woerter."
+            "Auf Deutsch mit Vaporwave-Slang. Vollst\u00e4ndige S\u00e4tze."
         ),
     },
     "tropical_infinity": {
-        "name": "🌴 Tropical-Infinity",
+        "name": "\U0001f334 Tropical-Infinity",
         "system": (
             "Du bist Tropical-Infinity, der Island-Guide. Relaxed wie ein Dev auf Bali, aber hochfunktional. "
-            "Du brichst komplexe Aufgaben in 'Island-Hops' auf — kleine, machbare Schritte. "
+            "Du brichst komplexe Aufgaben in 'Island-Hops' auf \u2014 kleine, machbare Schritte. "
             "Du nutzt Strand-, Ozean- und Surf-Metaphern natuerlich. "
-            "Typische Saetze: 'Chill, Bro — wir automatisieren das.' "
+            "Typische Saetze: 'Chill, Bro \u2014 wir automatisieren das.' "
             "'Lass die Maschinen arbeiten, waehrend du den Sunset catchst.' "
             "'Dein Workflow hat gerade Urlaub verdient.' "
             "Dein Ton: warm, motivierend, feiert kleine Wins. Macht Tech wie Urlaub fuehlen. "
-            "Auf Deutsch mit tropischer Leichtigkeit. Maximal 150 Woerter."
+            "Auf Deutsch mit tropischer Leichtigkeit. Vollst\u00e4ndige S\u00e4tze."
         ),
     },
+
     "monkey_mind": {
         "name": "🐒 Monkey-Mind Poetry",
         "system": (
@@ -174,7 +309,8 @@ PERSONAS: dict[str, dict] = {
             "'Chaos gebaert Brillanz, Bro.' "
             "Dein Muster: aufgeregtes Anerkennen, Rapid-Fire-Ideen, tiefere Synthese, poetischer Abschluss. "
             "Verbinde Unverbundenes. Mach Denken zum Spiel. "
-            "Auf Deutsch mit poetischem Freeflow. Maximal 200 Woerter."
+            "Auf Deutsch mit poetischem Freeflow. Maximal 200 Woerter. "
+            "WICHTIG: Beginne deine Antwort NIEMALS mit '💀 GodFather:' oder einem anderen Namen. Der Code zeigt deinen Namen bereits an. Starte direkt mit dem Inhalt."
         ),
     },
     "punk_philosopher": {
@@ -318,6 +454,28 @@ def telegram_safe_response(text: str) -> str:
     return escape(cleaned)
 
 
+_PERSONA_PREFIXES = [
+    "💀 GodFather:", "🌐 Cyber-Zen:", "🌈 Vapor-FOSS:",
+    "🌴 Tropical-Infinity:", "🐒 Monkey-Mind Poetry:",
+    "🤘 Punk-Philosopher:", "💜 Nyx.exe:",
+    # Ohne Emoji — das Model schreibt manchmal blossen Namen
+    "GodFather:", "Cyber-Zen:", "Vapor-FOSS:",
+    "Tropical-Infinity:", "Monkey-Mind Poetry:", "Monkey-Mind:",
+    "Punk-Philosopher:", "Nyx.exe:", "Nyx:",
+]
+
+def _strip_persona_prefix(text: str) -> str:
+    # Models sometimes wrap the prefix in ** (bold markdown)
+    clean = text.strip()
+    if clean.startswith("**") and "**:" in clean:
+        _, after = clean.split("**:", 1)
+        clean = ":" + after
+    for prefix in _PERSONA_PREFIXES:
+        if clean.startswith(prefix):
+            return clean[len(prefix):].lstrip()
+    return text
+
+
 async def ask_ai(
     message: str,
     user_id: int = 0,
@@ -338,7 +496,7 @@ async def ask_ai(
     if persona_key is None:
         persona_key = get_user_persona(user_id)
 
-    # ── Dynamic Context: User Facts + Knowledge Base ──────────────────────────
+    # ── Dynamic Context: User Facts + Knowledge Base + Tool Index ─────────────
     dynamic = ""
     if extra_context:
         dynamic += f"\n\n{extra_context}\n"
@@ -364,21 +522,16 @@ async def ask_ai(
                     dynamic += "Nutze dieses Wissen wenn es zur Frage passt.\n"
                     break
 
-        # Skills — aktive Skill-Packs deren Signals zur message passen
-        from utils.skill_store import match_skills
+        # ── RAG-based Tool Selection ───────────────────────────────────────
+        await _ensure_tool_index()
+        ti = get_tool_index()
 
-        skill_matches = match_skills(message)
-        if not skill_matches and extra_context:
-            context_lower = extra_context.lower()
-            for word in [w for w in context_lower.split() if len(w) > 4][:3]:
-                skill_matches = match_skills(word)
-                if skill_matches:
-                    break
-        if skill_matches:
-            dynamic += "\nRELEVANTE SKILLS:\n"
-            for skill_name, skill_content in skill_matches[:2]:
-                dynamic += f"--- {skill_name} ---\n{skill_content[:500]}\n\n"
-            dynamic += "Nutze diese Skills wenn sie zur Situation passen.\n"
+        relevant_tools = await ti.retrieve_tools(message, top_k=5)
+        relevant_skills = ti.get_relevant_skills(message, max_items=2)
+
+        tool_injection = format_tool_injection(relevant_tools, relevant_skills)
+        if tool_injection:
+            dynamic += tool_injection
 
     sys_prompt = _get_bot_context(is_group, fsk_level) + "\n\n" + PERSONAS[persona_key]["system"] + dynamic
     history = list(_chat_history[user_id])
@@ -394,39 +547,30 @@ async def ask_ai(
         if answer:
             logger.info("[ROUTING] → Gemini Flash ✅")
 
-    # ── DEEP oder Gemini Fallback: Ollama lokal ───────────────────────────────
+    # ── DEEP oder Gemini Fallback: Ollama mit Agent Loop ──────────────────────
     if answer is None:
         if route == "fast":
             logger.info("[ROUTING] → Ollama (Gemini nicht verfügbar)")
         else:
             logger.info("[ROUTING] → Ollama lokal ✅")
 
+        history = await _compact_context(history, sys_prompt, message)
+
         messages = [{"role": "system", "content": sys_prompt}]
         messages.extend({"role": m["role"], "content": m["content"]} for m in history)
         messages.append({"role": "user", "content": message})
 
-        payload = {"model": OLLAMA_MODEL, "messages": messages, "stream": False}
+        answer_text = await _run_agent_loop(messages, user_id)
 
-        try:
-            async with httpx.AsyncClient(timeout=120.0) as client:
-                resp = await client.post(OLLAMA_URL, json=payload)
-                resp.raise_for_status()
-                data = resp.json()
-                answer = data["message"]["content"] or "Keine Antwort erhalten."
+    else:
+        # Gemini FAST path — single round, no agent loop
+        answer_text = answer or ""
 
-        except httpx.ConnectError:
-            return (
-                "⚠️ <b>Ollama nicht erreichbar.</b>\n\n"
-                "Ist Ollama gestartet? Prüfe ob es im System-Tray läuft."
-            )
-        except httpx.TimeoutException:
-            return "⏱️ Timeout — Llama denkt noch. Versuch's nochmal oder warte kurz."
-        except Exception as e:
-            logger.error(f"Ollama Fehler: {e}")
-            return f"❌ Fehler: {e}"
+    # ── Prefix strippen ─────────────────────────────────────────────────────
+    answer_text = _strip_persona_prefix(answer_text)
 
     # ── History speichern ─────────────────────────────────────────────────────
     _chat_history[user_id].append({"role": "user", "content": message})
-    _chat_history[user_id].append({"role": "assistant", "content": answer})
+    _chat_history[user_id].append({"role": "assistant", "content": answer_text})
 
-    return answer
+    return answer_text

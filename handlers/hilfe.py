@@ -99,6 +99,15 @@ HELP_CATEGORIES = {
             ("/stats", "Gruppen-Statistiken"),
         ],
     },
+    "sales": {
+        "title": "SUPERNOVA Sales",
+        "emoji": "💫",
+        "desc": "Live.Play SUPERNOVA Campaign & Deal Tracker",
+        "commands": [
+            ("/supernova", "SUPERNOVA Campaign Status + Countdown"),
+        ],
+        "note": "Sales-Channels: ExtremeAlex27 auf Facebook, Instagram, LinkedIn & Meta Ads. Der Countdown läuft — check den Fortschritt!",
+    },
     "hermes": {
         "title": "Hermes Router",
         "emoji": "🔀",
@@ -113,7 +122,7 @@ HELP_CATEGORIES = {
     },
 }
 
-CATEGORY_ORDER = ["general", "ai", "stream", "memory", "training", "moderation", "hermes"]
+CATEGORY_ORDER = ["general", "ai", "stream", "sales", "memory", "training", "moderation", "hermes"]
 
 
 def format_help_menu() -> str:

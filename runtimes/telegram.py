@@ -90,6 +90,7 @@ from handlers.feedback import (
 from handlers.skill_creator import cmd_skills
 from handlers.maintenance import cmd_maintenance
 from handlers.comedy_test import check_clip
+from handlers.supernova import cmd_supernova
 from utils.decorators import admin_only, group_only
 from utils.storage import db
 
@@ -148,6 +149,7 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/tarot – Nyx.exe Tarot-Orakel\n"
          "/clear – Gesprächsverlauf löschen\n"
         "/vibe [preset] – DJ-Agent Playlist erstellen\n"
+        "/supernova – SUPERNOVA Campaign Status & Countdown\n"
         "🎙️ Sprachnachricht – wird transkribiert + KI antwortet\n"
         "💬 Bot merkt sich die letzten 5 Nachrichten pro User\n\n"
         "<b>── Hermes Router (Primary) ──</b>\n"
@@ -579,6 +581,7 @@ def run() -> None:
     app.add_handler(CommandHandler("tarot", cmd_tarot))
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("vibe", cmd_vibe))
+    app.add_handler(CommandHandler("supernova", cmd_supernova))
 
     app.add_handler(CommandHandler("skills", cmd_skills))
 

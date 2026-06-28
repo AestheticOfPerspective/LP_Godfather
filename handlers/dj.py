@@ -18,6 +18,9 @@ NAVIDROME_USER = os.getenv("NAVIDROME_USER", "")
 NAVIDROME_PASS = os.getenv("NAVIDROME_PASS", "")
 
 # ── Vibe Presets ─────────────────────────────────────────────────────────────
+MASTERED_PLAYLIST_NAME = "🔥 Mastered Tracks"
+MASTERED_PLAYLIST_ID: str | None = None
+
 VIBE_PRESETS: dict[str, dict] = {
     "focus": {
         "name": "🎯 Focus",
@@ -43,6 +46,12 @@ VIBE_PRESETS: dict[str, dict] = {
         "name": "☀️ Morning",
         "description": "Uplifting Start in den Tag",
         "genres": ["Indie", "Pop", "Folk", "Electronic"],
+    },
+    "mastered": {
+        "name": "🔥 Mastered Tracks",
+        "description": "Frisch gemasterte Tracks — von Fossnomade produziert und im Stream",
+        "genres": [],
+        "playlist": MASTERED_PLAYLIST_NAME,
     },
 }
 
@@ -76,6 +85,46 @@ async def _fetch_random_songs(count: int = 50, genre: str | None = None) -> list
             return songs
     except Exception as e:
         logger.error(f"Navidrome Fehler: {e}")
+        return []
+
+
+async def _fetch_playlist_songs(playlist_name: str) -> list[dict]:
+    """Holt alle Songs aus einer Navidrome-Playlist anhand des Namens."""
+    params = _subsonic_params()
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.get(
+                f"{NAVIDROME_URL}/rest/getPlaylists.view",
+                params=params,
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            playlists = data.get("subsonic-response", {}).get("playlists", {}).get("playlist", [])
+            if isinstance(playlists, dict):
+                playlists = [playlists]
+
+            target_id = None
+            for pl in playlists:
+                if pl.get("name") == playlist_name:
+                    target_id = pl.get("id")
+                    break
+
+            if not target_id:
+                logger.info(f"Playlist '{playlist_name}' nicht gefunden")
+                return []
+
+            resp2 = await client.get(
+                f"{NAVIDROME_URL}/rest/getPlaylist.view",
+                params={**params, "id": target_id},
+            )
+            resp2.raise_for_status()
+            data2 = resp2.json()
+            songs = data2.get("subsonic-response", {}).get("playlist", {}).get("entry", [])
+            if isinstance(songs, dict):
+                songs = [songs]
+            return songs
+    except Exception as e:
+        logger.error(f"Navidrome Playlist-Fehler: {e}")
         return []
 
 
@@ -120,6 +169,13 @@ async def generate_vibe_playlist(vibe_name: str, duration_minutes: int = 60) -> 
     for genre in preset["genres"]:
         songs = await _fetch_random_songs(count=30, genre=genre)
         all_songs.extend(songs)
+
+    # Playlist-basierter Preset (z.B. mastered tracks)
+    playlist_name = preset.get("playlist")
+    if playlist_name:
+        playlist_songs = await _fetch_playlist_songs(playlist_name)
+        if playlist_songs:
+            all_songs = playlist_songs
 
     if not all_songs:
         # Fallback: random songs ohne Genre-Filter

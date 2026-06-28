@@ -11,6 +11,7 @@ and replaces the block with the execution result.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import re
 from typing import Optional
@@ -35,6 +36,7 @@ TOOL_TAGS = frozenset({
     "clip",
     "skill",
     "help",
+    "antigravity",
 })
 
 
@@ -186,6 +188,32 @@ async def _handle_help(args: str, user_id: int) -> str:
     return f"❌ Kein Hilfeeintrag zu '{topic}'."
 
 
+async def _handle_antigravity(args: str, user_id: int) -> str:
+    if not args:
+        return "❓ Was soll der Antigravity Agent machen?"
+    try:
+        proc = await asyncio.create_subprocess_exec(
+            "agy", "--prompt", args,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=120.0)
+        if proc.returncode == 0:
+            result = stdout.decode().strip()[:2000]
+            return result or "✅ Antigravity erledigt."
+        error = stderr.decode().strip()[:500]
+        if "auth" in error.lower() or "sign" in error.lower():
+            return "🔑 Antigravity nicht authentifiziert. Admin: `/antigravity setup`"
+        return f"❌ Antigravity Fehler ({proc.returncode}): {error}"
+    except asyncio.TimeoutError:
+        return "⏱️ Antigravity hat zu lange gebraucht (Limit 120s)."
+    except FileNotFoundError:
+        return "❌ `agy` nicht installiert. Admin muss Container neu bauen."
+    except Exception as e:
+        logger.error("[tool-runner] antigravity error: %s", e)
+        return f"❌ Antigravity Fehler: {e}"
+
+
 _TOOL_HANDLERS = {
     "memory": _handle_memory,
     "recall": _handle_recall,
@@ -196,4 +224,5 @@ _TOOL_HANDLERS = {
     "clip": _handle_clip,
     "skill": _handle_skill,
     "help": _handle_help,
+    "antigravity": _handle_antigravity,
 }

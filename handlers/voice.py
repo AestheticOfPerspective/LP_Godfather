@@ -47,8 +47,8 @@ def _load_whisper():
 
     for device, ctype in [(whisper_device, compute), ("cpu", "int8")]:
         try:
-            _whisper_model = WhisperModel("base", device=device, compute_type=ctype)
-            logger.info(f"Whisper geladen: base ({device.upper()})")
+            _whisper_model = WhisperModel("large-v3", device=device, compute_type=ctype)
+            logger.info(f"Whisper geladen: large-v3 ({device.upper()})")
             return _whisper_model
         except Exception as e:
             logger.warning(f"Whisper {device.upper()} fehlgeschlagen: {e}")
@@ -88,6 +88,17 @@ async def handle_voice(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
         return
 
     user = update.effective_user
+    chat = update.effective_chat
+    if not user or user.is_bot or not chat:
+        return
+
+    # Gruppen: NUR bei @Bot-Erwähnung im Caption triggern (Voice in Gruppen ist fast immer Spam).
+    if chat.type in ("group", "supergroup"):
+        bot_username = context.bot.username.lower()
+        caption = (update.message.caption or "").lower()
+        if f"@{bot_username}" not in caption:
+            return
+
     user_id = user.id
     persona_key = get_user_persona(user_id)
     persona_name = PERSONAS[persona_key]["name"]

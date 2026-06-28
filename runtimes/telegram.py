@@ -91,6 +91,11 @@ from handlers.skill_creator import cmd_skills
 from handlers.maintenance import cmd_maintenance
 from handlers.comedy_test import check_clip
 from handlers.supernova import cmd_supernova
+from handlers.promo import cmd_promo
+from handlers.amazon import cmd_deals
+from handlers.revive import cmd_revive, cmd_activity
+from handlers.mastering import cmd_mastering, cmd_queue, cmd_status, cmd_update_status, route_mastering
+from handlers.antigravity import cmd_antigravity
 from utils.decorators import admin_only, group_only
 from utils.storage import db
 
@@ -149,6 +154,9 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         "/tarot – Nyx.exe Tarot-Orakel\n"
          "/clear – Gesprächsverlauf löschen\n"
         "/vibe [preset] – DJ-Agent Playlist erstellen\n"
+        "/promo – Edgerunner Cross-Promotion: alle Channels & Vorlagen\n"
+        "/deals – Gaming-Streaming Tech auf Amazon (Partnerlinks)\n"
+        "/mastering – Mixing & Mastering Track einreichen\n"
         "/supernova – SUPERNOVA Campaign Status & Countdown\n"
         "🎙️ Sprachnachricht – wird transkribiert + KI antwortet\n"
         "💬 Bot merkt sich die letzten 5 Nachrichten pro User\n\n"
@@ -526,6 +534,8 @@ async def handle_messages(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     user = update.effective_user
     chat = update.effective_chat
+    if user and chat and not user.is_bot:
+        db.touch_user(str(chat.id), str(user.id), user.username or user.first_name or "")
 
     if chat.type in ("group", "supergroup"):
         member = await context.bot.get_chat_member(chat.id, user.id)
@@ -582,6 +592,13 @@ def run() -> None:
     app.add_handler(CommandHandler("clear", cmd_clear))
     app.add_handler(CommandHandler("vibe", cmd_vibe))
     app.add_handler(CommandHandler("supernova", cmd_supernova))
+    app.add_handler(CommandHandler("promo", cmd_promo))
+    app.add_handler(CommandHandler("deals", cmd_deals))
+    app.add_handler(CommandHandler("mastering", cmd_mastering))
+    app.add_handler(CommandHandler("queue", cmd_queue))
+    app.add_handler(CommandHandler("status", cmd_status))
+    app.add_handler(CommandHandler("updatestatus", cmd_update_status))
+    app.add_handler(MessageHandler(filters.TEXT | filters.AUDIO | filters.VOICE | filters.Document.AUDIO, route_mastering))
 
     app.add_handler(CommandHandler("skills", cmd_skills))
 
@@ -607,6 +624,9 @@ def run() -> None:
     app.add_handler(CommandHandler("kick", cmd_kick))
     app.add_handler(CommandHandler("ban", cmd_ban))
     app.add_handler(CommandHandler("stats", cmd_stats))
+    app.add_handler(CommandHandler("revive", cmd_revive))
+    app.add_handler(CommandHandler("activity", cmd_activity))
+    app.add_handler(CommandHandler("antigravity", cmd_antigravity))
 
     app.add_handler(CallbackQueryHandler(handle_tarot_callback, pattern=r"^tarot_"))
     app.add_handler(CallbackQueryHandler(handle_hilfe_callback, pattern=r"^hilfe_"))

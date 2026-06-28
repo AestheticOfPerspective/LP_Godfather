@@ -51,6 +51,7 @@ STREAM_TODAY_FALLBACK: str = os.getenv(
 TWITCH_CHANNEL_URL: str = os.getenv("TWITCH_CHANNEL_URL", "")
 YOUTUBE_URL: str = os.getenv("YOUTUBE_URL", "")
 CLIP_INTAKE_URL: str = os.getenv("CLIP_INTAKE_URL", "")
+AMAZON_PARTNER_TAG: str = os.getenv("AMAZON_PARTNER_TAG", "")
 
 # ── Runtime Mode ───────────────────────────────────────────────────────────────
 # Choose between "telegram" and "twitch"

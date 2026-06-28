@@ -52,22 +52,14 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     bot_username = context.bot.username.lower()
     reply = update.message.reply_to_message
 
-    # Gruppen: nur triggern bei Mention oder Reply auf DICH (nicht auf andere Bots).
+    # Gruppen: NUR bei @Bot-Erwähnung triggern (kein Reply-to-Self mehr — verhindert Bot-Kaskaden).
     if chat.type in ("group", "supergroup"):
-        is_reply_to_self = (
-            update.message.reply_to_message
-            and update.message.reply_to_message.from_user
-            and update.message.reply_to_message.from_user.is_bot
-            and update.message.reply_to_message.from_user.id == context.bot.id
-        )
         is_mentioned = f"@{bot_username}" in text.lower()
 
-        if not is_reply_to_self and not is_mentioned:
+        if not is_mentioned:
             return
 
         text = re.sub(rf"@{re.escape(bot_username)}\b", "", text, flags=re.IGNORECASE).strip()
-        if not text and reply:
-            text = "Bitte reagiere auf die zitierte Nachricht."
         if not text:
             return
 

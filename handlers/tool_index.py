@@ -134,6 +134,13 @@ BUILTIN_TOOLS: dict[str, dict] = {
         "when_to_use": "Wenn der User sagt 'skills', 'zeig skills', 'skill aktivieren', 'skill loeschen'.",
         "keywords": ["skills", "skill aktivieren", "skill deaktivieren", "skill loeschen", "skill anzeigen"],
     },
+    # ── Antigravity CLI Agent ──
+    "antigravity": {
+        "category": "agent",
+        "description": "Fuehre eine komplexe Aufgabe mit dem Google Antigravity CLI Agenten aus (Multi-Step Reasoning, Code, Web-Suche)",
+        "when_to_use": "Wenn der User eine komplexe Aufgabe hat die Multi-Step Reasoning, Code-Ausfuehrung, Datei-Operationen oder Web-Recherche braucht.",
+        "keywords": ["antigravity", "agent", "komplex", "multi-step", "recherchier", "code ausfuehren", "web suche", "agy"],
+    },
     # ── Help ──
     "help": {
         "category": "help",

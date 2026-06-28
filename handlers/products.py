@@ -25,6 +25,16 @@ PRODUCTS = {
             ("🛠️ Advanced AI-Agent", "2.500€", "Multi-Tool, RAG, 90 Tage Support"),
         ]
     },
+    "mastering": {
+        "title": "🎵 Mixing & Mastering",
+        "items": [
+            ("🥉 Bronze", "19€", "Mix + Master (≤4 Min, 2 Revisionen)"),
+            ("🥈 Silver", "39€", "Mix + Master + Beat optional"),
+            ("🥇 Gold", "79€", "Full Production + Stream-Ready + DJ-Push"),
+            ("⏱️ Stundensatz", "20€/h", "Beratung, Recording-Support, Ad-hoc-Fixes"),
+        ],
+        "note": "Einstiegspreis — solange der Vorrat reicht. Dein Track, gemixed von Fossnomade, gespielt im Live.Play Stream. 🎙️💀",
+    },
     "membership": {
         "title": "🌟 Membership",
         "items": [
@@ -47,7 +57,8 @@ def get_products_menu(category: str) -> tuple[str, InlineKeyboardMarkup]:
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🎨 Creator Tools", callback_data="products_creator"),
              InlineKeyboardButton("🤖 KI Packs", callback_data="products_ai")],
-            [InlineKeyboardButton("🌟 Membership", callback_data="products_membership")],
+            [InlineKeyboardButton("🎵 Mastering", callback_data="products_mastering"),
+             InlineKeyboardButton("🌟 Membership", callback_data="products_membership")],
         ])
         return text, keyboard
 
@@ -61,6 +72,10 @@ def get_products_menu(category: str) -> tuple[str, InlineKeyboardMarkup]:
     for name, price, desc in cat["items"]:
         lines.append(f"{name} — <b>{price}</b>")
         lines.append(f"  <i>{desc}</i>\n")
+
+    note = cat.get("note")
+    if note:
+        lines.append(f"💡 <i>{note}</i>\n")
 
     text = "\n".join(lines)
     keyboard = InlineKeyboardMarkup([[

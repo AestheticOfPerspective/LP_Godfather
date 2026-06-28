@@ -269,6 +269,59 @@ class GodFatherBot(commands.Bot):
             logger.exception("Sub-Only Fehler")
             await ctx.send("❌ Sub-Only fehlgeschlagen. Prüfe Bot-Modrechte.")
 
+    @commands.command(name="emoteonly")
+    async def cmd_emoteonly(self, ctx: commands.Context, mode: str = "on"):
+        _can_use_mod_cmd(ctx)
+        try:
+            enabled = mode.lower() in ("on", "true", "1", "yes")
+            await self._send_chat_command(ctx, "/emoteonly" if enabled else "/emoteonlyoff")
+            state = "aktiviert" if enabled else "deaktiviert"
+            await ctx.send(f"😎 Emote-Only Mode {state} angefordert.")
+        except Exception:
+            logger.exception("Emote-Only Fehler")
+            await ctx.send("❌ Emote-Only fehlgeschlagen.")
+
+    @commands.command(name="vip")
+    async def cmd_vip(self, ctx: commands.Context, target: str):
+        _can_use_mod_cmd(ctx)
+        if not target:
+            await ctx.send("❓ Nutzung: !vip @user")
+            return
+        target = _normalize_twitch_user(target)
+        try:
+            await self._send_chat_command(ctx, f"/vip {target}")
+            await ctx.send(f"👑 VIP für {target} angefordert.")
+        except Exception:
+            logger.exception("VIP Fehler")
+            await ctx.send("❌ VIP fehlgeschlagen.")
+
+    @commands.command(name="unvip")
+    async def cmd_unvip(self, ctx: commands.Context, target: str):
+        _can_use_mod_cmd(ctx)
+        if not target:
+            await ctx.send("❓ Nutzung: !unvip @user")
+            return
+        target = _normalize_twitch_user(target)
+        try:
+            await self._send_chat_command(ctx, f"/unvip {target}")
+            await ctx.send(f"👑 VIP für {target} entzogen.")
+        except Exception:
+            logger.exception("Unvip Fehler")
+            await ctx.send("❌ Unvip fehlgeschlagen.")
+
+    @commands.command(name="marker")
+    async def cmd_marker(self, ctx: commands.Context, *, description: str = ""):
+        _can_use_mod_cmd(ctx)
+        try:
+            cmd = "/marker"
+            if description:
+                cmd += f" {description.strip()[:140]}"
+            await self._send_chat_command(ctx, cmd)
+            await ctx.send(f"📍 Stream Marker gesetzt.")
+        except Exception:
+            logger.exception("Marker Fehler")
+            await ctx.send("❌ Marker fehlgeschlagen.")
+
     @commands.command(name="warn")
     async def cmd_warn(self, ctx: commands.Context, target: str, *, reason: str = ""):
         _can_use_mod_cmd(ctx)
@@ -583,7 +636,8 @@ class GodFatherBot(commands.Bot):
         )
         mod_help = (
             "🔧 Mod: !timeout !ban !purge !warn "
-            "!slow !followers !subonly"
+            "!slow !followers !subonly !emoteonly "
+            "!vip !unvip !marker"
         )
         await ctx.send(f"{help_text} | {mod_help}" if _is_mod(ctx) else help_text)
 

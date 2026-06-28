@@ -132,6 +132,14 @@ class Database:
                 confidence        REAL NOT NULL DEFAULT 0.0,
                 created_at        TEXT DEFAULT (datetime('now'))
             );
+
+            CREATE TABLE IF NOT EXISTS user_activity (
+                chat_id    TEXT NOT NULL,
+                user_id    TEXT NOT NULL,
+                username   TEXT,
+                last_seen  TEXT DEFAULT (datetime('now')),
+                PRIMARY KEY (chat_id, user_id)
+            );
         """)
         self.conn.commit()
 
@@ -456,6 +464,52 @@ class Database:
             params,
         )
         return dict(cur.fetchall())
+
+
+    # ── User Activity (Revive/Inactivity Tracking) ────────────────────────────
+
+    def touch_user(self, chat_id: str, user_id: str, username: str = "") -> None:
+        self.conn.execute(
+            """INSERT INTO user_activity (chat_id, user_id, username, last_seen)
+               VALUES (?, ?, ?, datetime('now'))
+               ON CONFLICT(chat_id, user_id) DO UPDATE SET
+                   username=excluded.username,
+                   last_seen=datetime('now')""",
+            (chat_id, user_id, username[:32]),
+        )
+        self.conn.commit()
+
+    def get_inactive_users(self, chat_id: str, days: int = 14, limit: int = 50) -> list[tuple]:
+        cur = self.conn.execute(
+            """SELECT user_id, username, last_seen
+               FROM user_activity
+               WHERE chat_id=? AND last_seen < datetime('now', ? || ' days')
+               ORDER BY last_seen ASC
+               LIMIT ?""",
+            (chat_id, f"-{days}", limit),
+        )
+        return cur.fetchall()
+
+    def get_active_users(self, chat_id: str, days: int = 14, limit: int = 50) -> list[tuple]:
+        cur = self.conn.execute(
+            """SELECT user_id, username, last_seen
+               FROM user_activity
+               WHERE chat_id=? AND last_seen >= datetime('now', ? || ' days')
+               ORDER BY last_seen DESC
+               LIMIT ?""",
+            (chat_id, f"-{days}", limit),
+        )
+        return cur.fetchall()
+
+    def get_activity_stats(self, chat_id: str) -> dict:
+        total = self.conn.execute(
+            "SELECT COUNT(*) FROM user_activity WHERE chat_id=?", (chat_id,)
+        ).fetchone()[0]
+        active = self.conn.execute(
+            "SELECT COUNT(*) FROM user_activity WHERE chat_id=? AND last_seen >= datetime('now', '-14 days')",
+            (chat_id,),
+        ).fetchone()[0]
+        return {"total": total, "active_14d": active, "inactive_14d": total - active}
 
 
 # Singleton

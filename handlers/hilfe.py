@@ -54,6 +54,9 @@ HELP_CATEGORIES = {
             ("/follow", "Twitch/YouTube Follow-Links"),
             ("/clip [Text]", "Clip-Moment einreichen"),
             ("/recap [add Text]", "Letzten Recap zeigen oder neuen setzen (add=Admin)"),
+            ("/promo", "Edgerunner Cross-Promotion: alle Channels & Vorlagen"),
+            ("/deals [Produkt]", "Amazon Deals — Gaming/Streaming Tech (Partnerlinks)"),
+            ("/mastering", "Mixing & Mastering — Track einreichen"),
         ],
         "note": "Du kannst auch natürlich schreiben: „wann stream?“, „heute live?“, „clip das“, „recap: Kurzfassung“. Commands sind nur Fallback.",
         "links": [
@@ -97,6 +100,8 @@ HELP_CATEGORIES = {
             ("/kick @User [Grund]", "Kicken"),
             ("/ban @User [Grund]", "Bannen"),
             ("/stats", "Gruppen-Statistiken"),
+            ("/revive [Tage] [--dm]", "Inaktive Member pingen (Default 14d, --dm für DM)"),
+            ("/activity [Tage]", "Community-Aktivität anzeigen"),
         ],
     },
     "sales": {

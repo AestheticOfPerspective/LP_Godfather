@@ -11,6 +11,7 @@ services:
       - WHISPER_DEVICE=cpu
     volumes:
       - ./data:/app/data
+      - /home/fossnomade/.gemini/antigravity-cli:/home/godfather/.gemini/antigravity-cli
     networks:
       - lp_godfather_deploy_default
       - beast-offline-ai_offline-ai
@@ -29,6 +30,7 @@ services:
       - WHISPER_DEVICE=cpu
     volumes:
       - ./data:/app/data
+      - /home/fossnomade/.gemini/antigravity-cli:/home/godfather/.gemini/antigravity-cli
     networks:
       - lp_godfather_deploy_default
       - beast-offline-ai_offline-ai

@@ -9,6 +9,8 @@ import sys
 import time
 from datetime import datetime
 
+from utils.graceful import shutdown_handler, is_shutting_down
+
 # Fix für twitchio + Python 3.14 (kein Event-Loop in MainThread)
 try:
     asyncio.get_event_loop()
@@ -51,6 +53,7 @@ from handlers.stream import (
     format_wann,
 )
 from utils.storage import db
+from utils.ratelimit import rate_limiter
 
 logging.basicConfig(
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
@@ -166,15 +169,23 @@ class GodFatherBot(commands.Bot):
         return str(users[0].id)
 
     async def global_before_invoke(self, ctx: commands.Context) -> None:
+        if is_shutting_down():
+            await ctx.send("💀 GodFather fährt runter — keine neuen Commands.")
+            raise commands.CommandError("Shutdown in progress")
+
         cmd_name = ctx.command.name if ctx.command else "unknown"
-        remaining = _check_cooldown(cmd_name, ctx.author.name)
+        user = ctx.author.name or "unknown"
+
+        remaining = _check_cooldown(cmd_name, user)
         if remaining > 0:
             await ctx.send(f"⏳ Langsam, Choom. Noch {remaining:.0f}s Cooldown.")
-            raise commands.CommandError(f"Cooldown: {ctx.author.name} auf {cmd_name}")
+            raise commands.CommandError(f"Cooldown: {user} auf {cmd_name}")
+
+        await rate_limiter.wait_and_check(cmd_name, user)
 
     async def global_after_invoke(self, ctx: commands.Context) -> None:
         cmd_name = ctx.command.name if ctx.command else "unknown"
-        _set_cooldown(cmd_name, ctx.author.name)
+        _set_cooldown(cmd_name, ctx.author.name or "unknown")
 
     # ═══════════════════════════════════════════════════════════════════════════
     # MODERATION
@@ -627,8 +638,24 @@ def run() -> None:
     if not TWITCH_CHANNEL:
         raise ValueError("TWITCH_CHANNEL fehlt in .env / config.py!")
 
+    shutdown_handler.install()
+
+    def _cleanup():
+        logger.info("Shutdown: schließe Datenbank...")
+        try:
+            from utils.storage import db
+            db.conn.close()
+        except Exception:
+            pass
+        logger.info("Shutdown: GodFather Twitch Bot beendet.")
+
+    on_shutdown(_cleanup)
+
     bot = GodFatherBot()
-    bot.run()
+    try:
+        bot.run()
+    finally:
+        logger.info("GodFather Twitch Bot run loop beendet.")
 
 
 if __name__ == "__main__":

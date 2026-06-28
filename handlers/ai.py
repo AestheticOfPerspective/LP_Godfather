@@ -212,7 +212,8 @@ async def _ask_gemini(message: str, sys_prompt: str, history: list) -> str | Non
     try:
         async with httpx.AsyncClient(timeout=15.0) as client:
             resp = await client.post(
-                f"{GEMINI_URL}?key={GEMINI_API_KEY}",
+                GEMINI_URL,
+                headers={"X-Goog-Api-Key": GEMINI_API_KEY},
                 json=payload,
             )
             resp.raise_for_status()

@@ -17,7 +17,7 @@ RUN curl -fsSL https://antigravity.google/cli/install.sh | bash && \
 
 COPY . .
 
-RUN groupadd -r godfather && useradd -r -g godfather -d /app -s /sbin/nologin godfather \
+RUN groupadd -g 1000 godfather && useradd -u 1000 -g godfather -d /app -s /sbin/nologin godfather \
     && mkdir -p /app/data \
     && chown -R godfather:godfather /app
 

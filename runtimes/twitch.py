@@ -9,7 +9,7 @@ import sys
 import time
 from datetime import datetime
 
-from utils.graceful import shutdown_handler, is_shutting_down
+from utils.graceful import shutdown_handler, is_shutting_down, on_shutdown
 
 # Fix für twitchio + Python 3.14 (kein Event-Loop in MainThread)
 try:

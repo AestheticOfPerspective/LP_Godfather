@@ -110,19 +110,30 @@ logger = logging.getLogger("GodFatherBot")
 
 async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
-    text = (
-        f"Yo, <b>{user.first_name}</b>. 💀\n\n"
-        "Ich bin <b>GodFather</b> — der Community-Bot von <b>Life.Play</b>.\n\n"
-        "Was ich kann:\n"
-        "• Gruppen moderieren (Warn, Mute, Ban)\n"
-        "• Fragen via KI beantworten (Text & Sprache)\n"
-        "• 🎙️ Voice Commands — Sprachnachricht = KI-Antwort\n"
-        "• 6 wählbare KI-Personas\n"
-        "• Produkt-Infos & Preise zeigen\n"
-        "• Neue Member willkommen heißen\n"
-        "• Stats und Reports ausgeben\n\n"
-        "Tippe /help für alle Commands. Let's go, Choom. 🔥"
-    )
+    is_group = update.effective_chat.type in ("group", "supergroup") if update.effective_chat else False
+    if is_group:
+        text = (
+            f"Yo, <b>{user.first_name}</b>. 💀\n\n"
+            "Ich bin <b>GodFather</b> — der Community-Bot von <b>Life.Play</b>.\n\n"
+            "Was ich kann:\n"
+            "• Gruppen moderieren (Warn, Mute, Ban)\n"
+            "• Fragen via KI beantworten (Text & Sprache)\n"
+            "• 🎙️ Voice Commands — Sprachnachricht = KI-Antwort\n"
+            "• 6 wählbare KI-Personas\n"
+            "• Produkt-Infos & Preise zeigen\n"
+            "• Neue Member willkommen heißen\n"
+            "• Stats und Reports ausgeben\n\n"
+            "Tippe /help für alle Commands. Let's go, Choom. 🔥"
+        )
+    else:
+        text = (
+            f"Yo, <b>{user.first_name}</b>. 💀\n\n"
+            "Ich bin <b>GodFather</b> — der Community-Bot von <b>Life.Play</b>.\n\n"
+            "👋 <b>Schreib mir einfach</b> — kein /ask nötig.\n"
+            "Einfach tippen, ich antworte sofort.\n\n"
+            "Optional: /persona zum Wechseln, /vibe für Stimmung.\n"
+            "/help für alle Commands."
+        )
     keyboard = InlineKeyboardMarkup([
         [InlineKeyboardButton("📦 Produkte", callback_data="products"),
          InlineKeyboardButton("🤖 KI fragen", callback_data="ai_help")],
@@ -298,10 +309,13 @@ async def cmd_persona(update: Update, context: ContextTypes.DEFAULT_TYPE) -> Non
 
 async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if not context.args:
-        await update.message.reply_text(
-            "❓ Nutzung: <code>/ask Deine Frage hier</code>",
-            parse_mode=ParseMode.HTML
+        is_group = update.effective_chat.type in ("group", "supergroup") if update.effective_chat else False
+        text = (
+            "❓ Nutzung: <code>/ask Deine Frage hier</code>"
+            if is_group else
+            "🤷 Brauchst du kein /ask, Choom. Einfach losschreiben!"
         )
+        await update.message.reply_text(text, parse_mode=ParseMode.HTML)
         return
 
     user_id = update.effective_user.id
@@ -309,16 +323,21 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     persona_name = PERSONAS[persona_key]["name"]
 
     question = " ".join(context.args)
-    msg = await update.message.reply_text(f"⏳ {persona_name} denkt nach...")
 
     db.increment_stat("ai_requests")
     chat = update.effective_chat
+    is_group = chat.type in ("group", "supergroup") if chat else True
     maturity = chat_maturity_level(chat)
+
+    msg = None
+    if is_group:
+        msg = await update.message.reply_text(f"⏳ {persona_name} denkt nach...")
+
     response = await ask_ai(
         question,
         user_id=user_id,
         extra_context=build_chat_context_text(chat, update.effective_user),
-        is_group=chat.type in ("group", "supergroup") if chat else True,
+        is_group=is_group,
         fsk_level=maturity,
     )
 
@@ -328,10 +347,12 @@ async def cmd_ask(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         s_name = PERSONAS[suggestion]["name"]
         hint = f"\n\n💡 <i>Tipp: {s_name} wäre perfekt für dieses Thema → /persona</i>"
 
-    await msg.edit_text(
-        f"{persona_name}:\n\n{telegram_safe_response(response)}{hint}",
-        parse_mode=ParseMode.HTML
-    )
+    reply_text = f"{persona_name}:\n\n{telegram_safe_response(response)}{hint}"
+
+    if is_group:
+        await msg.edit_text(reply_text, parse_mode=ParseMode.HTML)
+    else:
+        await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)
 
 
 async def cmd_comedy_test(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -462,7 +483,7 @@ async def handle_callbacks(update: Update, context: ContextTypes.DEFAULT_TYPE) -
             f"✅ <b>Persona aktiviert!</b>\n\n"
             f"Aktive Persona: <b>{persona['name']}</b>\n\n"
             f"<i>{persona['system'][:120]}…</i>\n\n"
-            "Nutze <code>/ask</code> um jetzt die KI zu befragen.",
+            "Schreib mir einfach — kein <code>/ask</code> nötig.",
             parse_mode=ParseMode.HTML,
         )
         return

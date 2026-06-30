@@ -206,7 +206,7 @@ async def _ask_gemini(message: str, sys_prompt: str, history: list) -> str | Non
     payload = {
         "system_instruction": {"parts": [{"text": sys_prompt}]},
         "contents": contents,
-        "generationConfig": {"maxOutputTokens": 512, "temperature": 0.8},
+        "generationConfig": {"maxOutputTokens": 2048, "temperature": 0.8},
     }
 
     try:

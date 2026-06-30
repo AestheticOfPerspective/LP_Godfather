@@ -82,16 +82,20 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     user_id = user.id
     persona_key = get_user_persona(user_id)
     persona_name = PERSONAS[persona_key]["name"]
-
-    msg = await update.message.reply_text(f"⏳ {persona_name} denkt nach...")
+    is_group = chat.type in ("group", "supergroup")
 
     db.increment_stat("ai_requests")
     maturity = chat_maturity_level(chat)
+
+    msg = None
+    if is_group:
+        msg = await update.message.reply_text(f"⏳ {persona_name} denkt nach...")
+
     response = await ask_ai(
         text,
         user_id=user_id,
         extra_context=build_chat_context_text(chat, user),
-        is_group=chat.type in ("group", "supergroup"),
+        is_group=is_group,
         fsk_level=maturity,
     )
 
@@ -101,7 +105,9 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
         s_name = PERSONAS[suggestion]["name"]
         hint = f"\n\n💡 <i>Tipp: {s_name} passt besser → /persona</i>"
 
-    await msg.edit_text(
-        f"{persona_name}:\n\n{telegram_safe_response(response)}{hint}",
-        parse_mode=ParseMode.HTML,
-    )
+    reply_text = f"{persona_name}:\n\n{telegram_safe_response(response)}{hint}"
+
+    if is_group:
+        await msg.edit_text(reply_text, parse_mode=ParseMode.HTML)
+    else:
+        await update.message.reply_text(reply_text, parse_mode=ParseMode.HTML)

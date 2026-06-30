@@ -17,7 +17,7 @@ from telegram.ext import ContextTypes
 from config import ADMIN_IDS
 from handlers.chat_context import chat_title, chat_maturity_level, build_chat_context_text, format_chat_context
 from handlers.hilfe import format_help_category, format_help_menu
-from handlers.ai import ask_ai
+from handlers.ai import ask_ai, get_user_persona, PERSONAS, telegram_safe_response
 from handlers.skill_creator import format_skill_draft, generate_skill_draft
 from handlers.stream import (
     format_follow,
@@ -29,6 +29,12 @@ from handlers.stream import (
 from utils.skill_store import create_skill, list_skills, read_skill
 from utils.storage import db
 
+_CONTINUE_SIGNALS = (
+    "continue", "weiter", "mehr", "erzähl weiter", "erzaehl weiter",
+    "go on", "und weiter", "und?", "und dann", "rest", "the rest",
+    "fertig?", "bist du fertig", "vollständig", "vollstaendig",
+    "vervollständig", "vervollstaendige", "mach weiter",
+)
 _MEMORY_ADD_RE = re.compile(
     r"(?:^|[\n.!?]\s*)(?:godfather[, ]+)?(?:merk dir|merke dir|speicher|notier|notiere|fuer spaeter|für später)(?:\s+(?:das\s+)?(?:über|ueber)\s+mich)?[:\s]+(.+)$",
     re.IGNORECASE | re.DOTALL,
@@ -499,6 +505,24 @@ async def handle_natural_intent(
 
     if _contains_any(lower, _STRESS_SIGNALS):
         await msg.reply_text(random.choice(_SUPPORTS))
+        return True
+
+    if _contains_any(lower, _CONTINUE_SIGNALS):
+        await msg.reply_chat_action("typing")
+        persona_key = get_user_persona(user.id)
+        persona_name = PERSONAS[persona_key]["name"]
+        maturity = chat_maturity_level(chat)
+        extra = build_chat_context_text(chat, user)
+        response = await ask_ai(
+            "Fahre mit deiner letzten Antwort fort. Wiederhole nichts, mach genau da weiter wo du aufgehört hast.",
+            user_id=user.id,
+            persona_key=persona_key,
+            extra_context=extra,
+            is_group=chat.type in ("group", "supergroup"),
+            fsk_level=maturity,
+        )
+        reply = f"{persona_name}:\n\n{telegram_safe_response(response)}"
+        await msg.reply_text(reply, parse_mode=ParseMode.HTML)
         return True
 
     if _contains_any(lower, _SKILL_CREATION_SIGNALS):

@@ -54,6 +54,11 @@ from handlers.stream import (
 )
 from utils.storage import db
 from utils.ratelimit import rate_limiter
+from handlers.nyx_buffer import ChatBuffer
+from handlers.nyx_timer import TimerScheduler
+from handlers.nyx_vibe import VibeEngine
+from handlers.nyx_commentary import CommentaryEngine
+from handlers.nyx_mixxx import MixxxClient, TrackInfo
 
 logging.basicConfig(
     format="%(asctime)s | %(name)s | %(levelname)s | %(message)s",
@@ -126,11 +131,28 @@ class GodFatherBot(commands.Bot):
             initial_channels=[TWITCH_CHANNEL],
             nick=TWITCH_BOT_NICK,
         )
+        self.nyx_buffer = ChatBuffer(maxlen=200)
+        self.nyx_timer = TimerScheduler()
+        self.nyx_vibe = VibeEngine(self.nyx_buffer)
+        self.nyx_commentary = CommentaryEngine(
+            self.nyx_vibe,
+            send_fn=self._nyx_send,
+        )
+        self.nyx_mixxx = MixxxClient(
+            bridge_url=os.getenv("MIXXX_BRIDGE_URL", "http://localhost:5002"),
+        )
+        self._last_track: TrackInfo | None = None
         logger.info("GodFather Twitch Bot initialisiert")
 
     async def event_ready(self):
         logger.info(f"Eingeloggt als {self.nick} in Channel {TWITCH_CHANNEL}")
         logger.info("GodFather live in %s - BOT_MODE=twitch", TWITCH_CHANNEL)
+        self.loop.create_task(self.nyx_timer.start())
+        self.nyx_timer.add("vibe_tick", interval=30, callback=self._nyx_vibe_tick)
+        self.nyx_timer.add("commentary_tick", interval=30, callback=self._nyx_commentary_tick)
+        self.loop.create_task(
+            self._nyx_mixxx_poll()
+        )
 
     async def event_message(self, message):
         # If broadcaster and bot use the same account, user-issued commands
@@ -145,7 +167,49 @@ class GodFatherBot(commands.Bot):
             logger.info("Command empfangen | echo=%s | author=%s | content=%s", message.echo, author, content)
 
         db.increment_stat("messages")
+
+        if message.author and not message.echo:
+            self.nyx_buffer.push(
+                author=message.author.name or "unknown",
+                message=content,
+                emotes=[],
+                timestamp=time.time(),
+            )
+
         await self.handle_commands(message)
+
+    async def _nyx_vibe_tick(self) -> None:
+        state = await self.nyx_vibe.tick()
+        logger.info(
+            "Nyx Vibe | sentiment=%s energy=%.2f speed=%.2f emote=%s keywords=%s",
+            state.sentiment, state.energy, state.chat_speed,
+            state.dominant_emote or "-",
+            state.keywords[:3] if state.keywords else "-",
+        )
+
+    async def _nyx_send(self, message: str) -> None:
+        channels = self.connected_channels
+        if channels:
+            await channels[0].send(message)
+
+    async def _nyx_commentary_tick(self) -> None:
+        await self.nyx_commentary.commentary_tick()
+
+    async def _nyx_on_track_change(self, old: TrackInfo | None, new: TrackInfo | None) -> None:
+        if new and new.is_playing:
+            logger.info("Nyx Track Change: %s", new.display)
+            self._last_track = new
+            from utils.storage import db
+            db.add_song_event("mixxx", new.artist, new.title, "")
+
+    async def _nyx_mixxx_poll(self) -> None:
+        try:
+            await self.nyx_mixxx.poll(
+                interval=float(os.getenv("MIXXX_POLL_INTERVAL", "5.0")),
+                callback=self._nyx_on_track_change,
+            )
+        except Exception:
+            logger.warning("Mixxx Poll abgestürzt — deaktiviere Mixxx-Anbindung")
 
     # ── Permission Check Override ─────────────────────────────────────────────
 
@@ -579,6 +643,40 @@ class GodFatherBot(commands.Bot):
         else:
             await ctx.send("🎵 Noch kein Song erkannt.")
 
+    # ── Nyx Mixxx DJ Commands ──────────────────────────────────────────────────
+
+    @commands.command(name="np")
+    async def cmd_np(self, ctx: commands.Context):
+        track = await self.nyx_mixxx.current_track()
+        if track and track.is_playing:
+            await ctx.send(f"🎵 Now Playing: {track.display}")
+        elif track:
+            await ctx.send(f"🎵 Pausiert: {track.display}")
+        else:
+            await ctx.send("🎵 Mixxx nicht verbunden — läuft Navidrome? Probier !nowplaying")
+
+    @commands.command(name="track")
+    async def cmd_track(self, ctx: commands.Context):
+        track = await self.nyx_mixxx.current_track()
+        if not track or not track.title:
+            await ctx.send("🎵 Kein Track in Mixxx. Probier !nowplaying für Navidrome.")
+            return
+        dur = f"{int(track.duration // 60)}:{int(track.duration % 60):02d}" if track.duration else "?:??"
+        pos = f"{int(track.position // 60)}:{int(track.position % 60):02d}" if track.position else "?:??"
+        status = "▶️" if track.is_playing else "⏸️"
+        parts = [f"{status} {track.artist} — {track.title}"]
+        if track.album:
+            parts.append(f"[{track.album}]")
+        parts.append(f"({pos} / {dur})")
+        await ctx.send(" ".join(parts))
+
+    @commands.command(name="lasttrack")
+    async def cmd_lasttrack(self, ctx: commands.Context):
+        if self._last_track and self._last_track.title:
+            await ctx.send(f"🎵 Zuletzt in Mixxx: {self._last_track.display}")
+        else:
+            await ctx.send("🎵 Noch kein Track in Mixxx gespielt. Probier !lastsong für Navidrome.")
+
     @commands.command(name="ask")
     async def cmd_ask(self, ctx: commands.Context, *, question: str = ""):
         if not question:
@@ -632,7 +730,7 @@ class GodFatherBot(commands.Bot):
             "💀 GodFather Twitch Commands: "
             "!wann !heute !follow !clip !recap !choom !godfather !zen !vibe !hype !lore !gig !phantom "
             "!support !respect !motivate !so "
-            "!ask !persona !clear !nowplaying !lastsong"
+            "!ask !persona !clear !nowplaying !lastsong !np !track !lasttrack"
         )
         mod_help = (
             "🔧 Mod: !timeout !ban !purge !warn "
@@ -701,6 +799,8 @@ def run() -> None:
             db.conn.close()
         except Exception:
             pass
+        if hasattr(bot, 'nyx_timer'):
+            asyncio.ensure_future(bot.nyx_timer.stop())
         logger.info("Shutdown: GodFather Twitch Bot beendet.")
 
     on_shutdown(_cleanup)

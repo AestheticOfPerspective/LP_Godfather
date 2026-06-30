@@ -75,6 +75,13 @@ COOLDOWN_MOD: int = int(os.getenv("COOLDOWN_MOD", "1"))
 COOLDOWN_AI: int = int(os.getenv("COOLDOWN_AI", "10"))
 COOLDOWN_VIBE: int = int(os.getenv("COOLDOWN_VIBE", "30"))
 
+# ── Nyx.exe Co-DJ / Mixxx Bridge ──────────────────────────────────────────────
+MIXXX_BRIDGE_URL: str = os.getenv("MIXXX_BRIDGE_URL", "http://localhost:5002")
+MIXXX_POLL_INTERVAL: float = float(os.getenv("MIXXX_POLL_INTERVAL", "5.0"))
+NYX_COMMENTARY_ENABLED: bool = os.getenv("NYX_COMMENTARY_ENABLED", "true").lower() == "true"
+NYX_COMMENTARY_INTERVAL: int = int(os.getenv("NYX_COMMENTARY_INTERVAL", "30"))
+NYX_COMMENTARY_LLM: bool = os.getenv("NYX_COMMENTARY_LLM", "false").lower() == "true"
+
 # ── Hermes Primary Router (Telegram-First Control Plane) ──────────────────────
 HERMES_ROUTER_ENABLED: bool = os.getenv("HERMES_ROUTER_ENABLED", "false").lower() == "true"
 HERMES_ROUTER_URL: str = os.getenv("HERMES_ROUTER_URL", "")

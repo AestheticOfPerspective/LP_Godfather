@@ -12,6 +12,7 @@ from handlers.ai import (
     telegram_safe_response,
 )
 from handlers.chat_context import build_chat_context_text, chat_maturity_level
+from handlers.mastering import _user_key as _mastering_key
 from handlers.feedback import log_text_reply_feedback
 from handlers.intents import handle_natural_intent
 from utils.storage import db
@@ -66,18 +67,8 @@ async def handle_text_message(update: Update, context: ContextTypes.DEFAULT_TYPE
     if await handle_natural_intent(update, context, text):
         return
 
-    if reply:
-        log_text_reply_feedback(update, text)
-        reply_text = reply.text or reply.caption or ""
-        if reply_text:
-            author = reply.from_user.first_name if reply.from_user else "Unbekannt"
-            text = (
-                "Kontext: Der User bezieht sich auf diese Telegram-Nachricht:\n"
-                f"Von: {author}\n"
-                f"---\n{reply_text[:1800]}\n---\n\n"
-                f"Aktuelle Frage/Auftrag: {text}\n\n"
-                "Antworte explizit auf diese zitierte Nachricht, nicht auf alte Chat-History."
-            )
+    if context.user_data.get(_mastering_key(user.id)):
+        return
 
     user_id = user.id
     persona_key = get_user_persona(user_id)

@@ -619,7 +619,6 @@ def run() -> None:
     app.add_handler(CommandHandler("queue", cmd_queue))
     app.add_handler(CommandHandler("status", cmd_status))
     app.add_handler(CommandHandler("updatestatus", cmd_update_status))
-    app.add_handler(MessageHandler(filters.TEXT | filters.AUDIO | filters.VOICE | filters.Document.AUDIO, route_mastering))
 
     app.add_handler(CommandHandler("skills", cmd_skills))
 
@@ -657,6 +656,7 @@ def run() -> None:
     app.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, handle_voice))
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, welcome_new_member))
     app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_text_message))
+    app.add_handler(MessageHandler(filters.TEXT | filters.AUDIO | filters.VOICE | filters.Document.AUDIO, route_mastering))
 
     logger.info("GodFather Bot startet... 💀")
     app.run_polling(allowed_updates=Update.ALL_TYPES)
